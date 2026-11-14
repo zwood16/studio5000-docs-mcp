@@ -53,7 +53,10 @@ def test_help_id(index, tools):
 @pytest.mark.integration
 def test_breadcrumbs(index):
     s = index.stats()
-    assert s["with_breadcrumb"] / s["pages"] > 0.95
+    assert s["with_breadcrumb"] / s["pages"] >= 0.99
+    m = s["build_stats"]["breadcrumb_methods"]
+    assert m["inbound"] > 0 and m["section"] > 0
+    assert (m["inbound"] + m["section"]) / s["pages"] < 0.1  # fallbacks are a minority
 
 
 @pytest.mark.integration

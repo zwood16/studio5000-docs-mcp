@@ -228,3 +228,31 @@ def test_mcp_protocol_is_error_flag(server_tools):
         "Error executing tool get_page: No page 'does-not-exist' in v99. Use search_help to find page_ids.")
     assert good.is_error is False
     assert "Widget Overview" in good.content[0].text
+
+
+def test_breadcrumb_inbound_and_section_fallbacks(synthetic_root, tmp_path):
+    def page(title, ident, body=""):
+        return (f'<html><head><title>{title}</title><meta name="DC.identifier" content="{ident}"></head>'
+                f'<body><main><article><h1>{title}</h1>{body}</article></main></body></html>')
+
+    wct = synthetic_root / "help" / "clinset" / "wct.html"
+    wct.write_text(wct.read_text(encoding="utf-8").replace(
+        "</article>", '<p><a href="../snippet.html">shared</a></p></article>'), encoding="utf-8")
+    (synthetic_root / "help" / "snippet.html").write_text(page("Shared Snippet", "ait_5", "<p>Okapi.</p>"), encoding="utf-8")
+    (synthetic_root / "common-content").mkdir()
+    (synthetic_root / "common-content" / "lonely.html").write_text(page("Lonely Snippet", "ait_6"), encoding="utf-8")
+
+    db = tmp_path / "x.sqlite"
+    stats = build_index(OxygenSource(synthetic_root, "v99"), db, fingerprint="fp")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    row = lambda i: conn.execute("SELECT * FROM pages WHERE id=?", (i,)).fetchone()
+    # inbound: linked from the TOC'd Widget Counter page -> its crumbs + itself (with page id)
+    assert json.loads(row("ait_5")["crumbs"]) == [["Widget Overview", "ait_1"], ["Widget Counter (WCT)", "ait_2"]]
+    assert row("ait_5")["breadcrumb"] == "Widget Overview > Widget Counter (WCT)" and row("ait_5")["depth"] == 2
+    # section label: no links at all, no page id in the crumb
+    assert json.loads(row("ait_6")["crumbs"]) == [["Common content", None]] and row("ait_6")["depth"] == 1
+    # TOC roots stay empty
+    assert row("ait_1")["breadcrumb"] == ""
+    assert stats["breadcrumb_methods"] == {"toc": 1, "relation": 1, "csv": 1, "inbound": 1, "section": 1}
+    conn.close()

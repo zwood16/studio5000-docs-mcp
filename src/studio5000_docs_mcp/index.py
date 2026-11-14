@@ -23,7 +23,7 @@ from .extract import (
 from .sources.base import HelpSource, RawPage
 from .sources.oxygen import OxygenSource
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 # column order: title, mnemonic, keywords, breadcrumb, body, extra
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
@@ -64,6 +64,15 @@ def extract_mnemonics(title: str, path: str = "") -> list[str]:
         if m:
             out.append(m.group(1))
     return out
+
+
+SECTION_LABELS = {  # last-resort breadcrumb label per section; titles match the top-level TOC where one exists
+    "common-content": "Common content",
+    "help/clinset": "Instruction Set",
+    "help/rs5000": "Studio 5000 Logix Designer",
+    "help/modules": "Module Information",
+    "publications": "Publications",
+}
 
 
 def section_of(path: str) -> str:
@@ -158,6 +167,7 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
 
     csv_paths = source.csv_toc_paths()
     memo: dict[str, list[tuple[str, str | None]]] = {}
+    method: dict[str, str] = {}  # path -> how its breadcrumb was derived
 
     def crumbs_for(path: str, stack: tuple[str, ...] = ()) -> list[tuple[str, str | None]]:
         if path in memo:
@@ -165,16 +175,49 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
         res: list[tuple[str, str | None]] = []
         if path in href_to_node:
             res = toc_crumbs(href_to_node[path])
+            if res:
+                method[path] = "toc"
         else:
             page = by_path.get(path)
             rel = page.relation if page else ""
             if rel and rel in by_path and rel != path and rel not in stack:
                 par = by_path[rel]
                 res = crumbs_for(rel, stack + (path,)) + [(par.title, path_to_id[rel])]
+                method[path] = "relation"
             elif path in csv_paths:
                 res = [(t, None) for t in csv_paths[path]]
+                if res:
+                    method[path] = "csv"
         memo[path] = res
         return res
+
+    # ---- fallbacks for pages without a breadcrumb: inbound links, then a section label
+    primary = {p.path: crumbs_for(p.path) for p in pages}  # toc / relation / csv only
+    inbound: dict[str, list[str]] = {}
+    for p in pages:
+        for l in p.links:
+            if l in by_path and l != p.path:
+                inbound.setdefault(l, []).append(p.path)
+    final: dict[str, list[tuple[str, str | None]]] = {}
+    for p in sorted(pages, key=lambda x: x.path):
+        res = primary[p.path]
+        if not res and p.path not in href_to_node:  # TOC pages with no ancestors are roots; leave them empty
+            sec = section_of(p.path)
+            cands = sorted({l for l in inbound.get(p.path, []) if primary[l]})
+            if cands:
+                sec_counts: dict[str, int] = {}
+                for l in cands:
+                    sec_counts[section_of(l)] = sec_counts.get(section_of(l), 0) + 1
+                best = min(cands, key=lambda l: (section_of(l) != sec, -sec_counts[section_of(l)],
+                                                 len(primary[l]), l))
+                res = primary[best] + [(by_path[best].title, path_to_id[best])]
+                method[p.path] = "inbound"
+            else:
+                label = SECTION_LABELS.get(sec) or SECTION_LABELS.get(sec.split("/")[0])
+                if label:
+                    res = [(label, None)]
+                    method[p.path] = "section"
+        final[p.path] = res
 
     # ---- link rewrite
     link_re = re.compile(r"\]\(page:([^)]+)\)")
@@ -204,7 +247,7 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
         mns = extract_mnemonics(p.title, p.path)
         mnemonic = " ".join(mns)
         kind = classify(p.path, p.title, mnemonic)
-        crumbs = crumbs_for(p.path)
+        crumbs = final[p.path]
         if crumbs:
             n_with_crumbs += 1
         breadcrumb = " > ".join(t for t, _ in crumbs)
@@ -249,6 +292,8 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
     stats = {
         "pages": len(pages),
         "pages_with_breadcrumb": n_with_crumbs,
+        "breadcrumb_methods": {m: sum(1 for v in method.values() if v == m)
+                               for m in ("toc", "relation", "csv", "inbound", "section")},
         "toc_nodes": len(nodes),
         "help_ids": len(seen_h),
         "mnemonic_entries": n_mn,

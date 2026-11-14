@@ -243,6 +243,7 @@ def get_help_statistics(version: str | None = None) -> str:
         s = m._indexes[v].stats()
         lines += [
             f"pages: {s['pages']}  (with breadcrumb: {s['with_breadcrumb']})",
+            "breadcrumb sources: " + ", ".join(f"{k}={n}" for k, n in s["build_stats"].get("breadcrumb_methods", {}).items()),
             f"toc nodes: {s['toc_nodes']}  help ids: {s['help_ids']}  mnemonics: {s['mnemonics']}",
             "kinds: " + ", ".join(f"{k}={n}" for k, n in sorted(s["kinds"].items())),
             "sections: " + ", ".join(f"{k}={n}" for k, n in list(s["sections"].items())[:12]),
