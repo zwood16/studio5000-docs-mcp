@@ -10,7 +10,7 @@ Each user builds the index locally from their own licensed install. No Rockwell 
 
 ```
 uv run studio5000-docs-mcp
-uvx --from git+<repo-url> studio5000-docs-mcp
+uvx --from git+https://github.com/zwood16/studio5000-docs-mcp studio5000-docs-mcp
 ```
 
 Register with Claude Code:
@@ -32,13 +32,16 @@ The first start builds the index in the background (a few seconds to about a min
 | | `--transport stdio\|streamable-http` | Default `stdio`. |
 | | `--build-only` | Build the index, print statistics and timing, exit. |
 
-Windows: when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000\Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and the same path under `%ProgramFiles%`. **This default path is unverified; it has not been checked on a real Windows install.** Set `S5K_HELP_ROOT` if it does not match.
+Windows: when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000\Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and the same path under `%ProgramFiles%`. This matches a default Studio 5000 install (checked on Windows 11 with v30–v37 installed under `Program Files (x86)`). Set `S5K_HELP_ROOT` for non-default install locations.
 
 The index is one SQLite file per version. It is rebuilt when the help folder's HTML files, TOC files or metadata files (`context-help-map.xml`, `rs5000.csv`, `index.xml`) change, or when the schema version changes. The help folder is only ever read.
 
 ## Tools
 
 `search_help`, `get_page` (paginated with `offset`/`max_chars`), `get_instruction` (by mnemonic, e.g. `TON`, `SSV`), `get_page_by_help_id`, `browse_toc`, `get_breadcrumb`, `list_versions`, `get_help_statistics`. Search snippets are not page content; the server instructions tell the model to call `get_page`.
+
+- **Page IDs:** a page's `page_id` is its help topic ID (e.g. `ait_455128`) when that ID is unique. Some pages share a topic ID (duplicated pages such as the GSV/SSV pages); those use their help-relative path instead (e.g. `help/clinset/...html`). Every tool that takes a `page_id` accepts either form.
+- **Errors:** failures (unknown page, TOC node or version, invalid `kind`, index still building) are returned as MCP tool errors (`is_error: true`). Valid empty outcomes, such as no search hits or an unmapped help ID, are normal results.
 
 ## Development
 

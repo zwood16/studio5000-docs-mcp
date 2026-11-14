@@ -38,8 +38,8 @@ def _version_from_path(p: Path) -> str | None:
 
 
 def _windows_probe_roots() -> list[Path]:
-    # UNVERIFIED: this default install location has not been checked on a real
-    # Windows machine. Set S5K_HELP_ROOT if it does not match your install.
+    # Default Studio 5000 install location (confirmed on Windows 11, v30-v37 under Program Files (x86)).
+    # Set S5K_HELP_ROOT for non-default installs.
     roots = []
     for env in ("ProgramFiles(x86)", "ProgramFiles"):
         base = os.environ.get(env)
