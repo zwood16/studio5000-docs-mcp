@@ -10,7 +10,7 @@ MCP server that indexes the Studio 5000 Logix Designer help (Oxygen WebHelp, v37
 uv run pytest -m "not integration" -q              # offline unit tests only (synthetic fixtures, no help install)
 uv run pytest -s                                   # full suite; -s prints per-query eval results
 uv run pytest tests/test_index.py::test_name       # single test
-uv run pytest tests/test_eval.py -s                # retrieval eval only (hit@3 over tests/eval.yaml)
+uv run pytest tests/test_eval.py -s                # retrieval eval only (hit@3 and MRR@10 over eval.yaml and eval_holdout.yaml)
 uv run studio5000-docs-mcp --build-only --force-rebuild   # rebuild index, print stats and timing
 uv run python scripts/smoke_stdio.py               # start server over stdio, list and call every tool
 uv run studio5000-docs-mcp                         # run the server (stdio)
@@ -40,7 +40,7 @@ Pipeline: `discovery` → `sources/oxygen` (+ `extract`) → `index.build_index`
 - **Cache invalidation:** One DB per version in the platformdirs user cache (or `S5K_DB_DIR`). The stored fingerprint combines the source fingerprint (HTML file count + max mtime, size/mtime of `context-help-map.xml`, `rs5000.csv`, `index.xml`, and nav-links JSON count + max mtime), `SCHEMA_VERSION`, the root path and the `TOKENIZER` string. **Bump `SCHEMA_VERSION` whenever you change the schema or anything that changes indexed content**, or existing caches will be served stale.
 - **Tokenizer and query handling must stay symmetric:** The FTS tokenizer is `porter unicode61 ... tokenchars '_.-'` so identifiers like `.DN`, `1756-IF16` and `Axis_CIP_Drive` stay whole. Because that also glues sentence periods onto words, `clean_punct` strips trailing `.-_` and `expand_identifiers` adds the parts of dotted/hyphenated identifiers to an `extra` column. Index-time and query-time processing must match. Raw queries are quoted per token and must never raise FTS syntax errors (there is a test with hostile queries).
 - **Ranking:** search is tiered: tier 0 is an exact title or lone-mnemonic match, tier 1 is all terms (AND), tier 2 is any term (OR) to fill the limit. bm25 column weights are in `BM25_WEIGHTS`; ALL-CAPS query tokens matching a page mnemonic get a flat `MNEMONIC_BONUS`. After changing tokenizer, weights or tiers, rerun the eval and report the hit@3 score.
-- **Eval expectations:** `tests/eval.yaml` expected paths must be verified against the actual help content, not guessed. Keep queries used for tuning distinct from held-out ones when adding more.
+- **Eval expectations:** expected paths must be verified against the actual help content (grep the HTML or SQL `LIKE` on the DB), never taken from search results. Tune only against `tests/eval.yaml` (hit@3 >= 0.7). `tests/eval_holdout.yaml` is held out: never tune against it, and don't edit its queries or expected paths after seeing results (floor hit@3 >= 0.5). Report both hit@3 and MRR@10 for both sets after ranking changes.
 - **`mcp` dependency:** v2+ (`from mcp.server.mcpserver import MCPServer`). `FastMCP` was renamed in v2 and `mcp.server.fastmcp` now raises on import; v2 client models use snake_case fields (`server_info`, `input_schema`, `is_error`).
 - **Windows default probe path** in `discovery.py` is unverified on a real install.
 - **No Rockwell content in the repo:** never commit extracted Rockwell help content or fixtures. Each user builds the index from their own licensed install.

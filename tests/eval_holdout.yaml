@@ -1,0 +1,52 @@
+# HELD-OUT retrieval eval. Never use this file for tuning: do not change ranking, weights, tokenizer,
+# synonyms or tiers in response to its results, and do not edit queries or expected paths after seeing them.
+# It exists to give an honest estimate of retrieval quality next to the (tuned, optimistic) tests/eval.yaml.
+# Same format as eval.yaml: a query is a hit@3 when any expected path is in the top 3 results.
+# Expected paths were chosen by reading the v37 help content directly (HTML/DB SQL LIKE), not by searching.
+- query: copy an array of DINTs to another array without data conversion
+  expected: [help/clinset/arrayfilemisc/copy-synchronous-copy-file--cps-.html]
+- query: what happens to outputs when the controller changes to program mode
+  expected:
+    - help/modules/1756analog/1756common/program-mode.html
+    - help/modules/1756analog/1756discrete---moving-to-aop/configuration-tab-1756-digital-output.html
+    - help/modules/1756analog/output-state-tab-1756-of4---of8--of6ci---of6vi.html
+- query: minor fault for arithmetic overflow
+  expected:
+    - common-content/comm-attributes/Math-status-flags.html
+    - help/clinset/clinset_extras/math-status-flags.html
+    - help/clinset/clinset_extras/math-status-flags_2.html
+- query: how to create a user-defined data type
+  expected: [help/rs5000/user-defined_datatype/define-a-user-defined-data-type.html]
+- query: difference between COP and CPS synchronous copy
+  expected: [help/clinset/arrayfilemisc/copy-synchronous-copy-file--cps-.html]
+- query: periodic task watchdog time
+  expected:
+    - help/rs5000/task_configuration/create-a-periodic-task.html
+    - help/rs5000/task_configuration/configure-a-periodic-task.html
+- query: import rungs from an L5X file
+  expected:
+    - help/rs5000/import-and-export/importing-exporting-logic.html
+    - help/rs5000/af_utilities/import-rung-command.html
+- query: limit test instruction check value within range
+  expected: [help/clinset/compare/limit--limit-.html]
+- query: compare two strings for equality
+  expected: [help/clinset/compare/equal-to--eq-.html]
+- query: structured text CASE statement syntax
+  expected: [help/clinset/proc-drives/case_of.html]
+- query: add a 1756-EN2T module to the I/O configuration
+  expected: [help/rs5000/quick_start/create-and-configure-i-o.html]
+- query: how to force an input tag
+  expected:
+    - help/rs5000/forcing/force.html
+    - help/rs5000/forcing/set-a-force-from-the-data-monitor.html
+    - help/rs5000/forcing/force-in-the-ladder-editor.html
+- query: counter up CTU accumulator overflow
+  expected: [help/clinset/timer-counter/count-up--ctu-.html]
+- query: create an alias tag
+  expected: [help/rs5000/datamon_taged/Create-an-alias-tag.html]
+- query: safety task signature
+  expected:
+    - help/rs5000/controller_config/view-safety-status-and-signature.html
+    - help/rs5000/controller_config/view-safety-status-and-signature_2.html
+- query: convert REAL to DINT by truncating
+  expected: [help/clinset/math-conversions/truncate--trn-.html]
