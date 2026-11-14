@@ -13,6 +13,7 @@ uv run pytest tests/test_index.py::test_name       # single test
 uv run pytest tests/test_eval.py -s                # retrieval eval only (hit@3 and MRR@10 over eval.yaml and eval_holdout.yaml)
 uv run studio5000-docs-mcp --build-only --force-rebuild   # rebuild index, print stats and timing
 uv run python scripts/smoke_stdio.py               # start server over stdio, list and call every tool
+uv run python scripts/bench.py [--holdout] [--json PATH]   # benchmark build/warm start/size/eval/latency/footprint (needs S5K_HELP_ROOT)
 uv run studio5000-docs-mcp                         # run the server (stdio)
 ```
 
