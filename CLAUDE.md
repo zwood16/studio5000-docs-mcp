@@ -32,7 +32,7 @@ Pipeline: `discovery` → `sources/oxygen` (+ `extract`) → `index.build_index`
   - `build_index` assigns page IDs, builds breadcrumbs (TOC → `DC.relation` chain → CSV toc-path fallback), extracts mnemonics, classifies `kind`, and writes to a temp file before an atomic rename.
   - `Index` serves queries over one read-only connection guarded by an `RLock`.
   - `IndexManager` builds the default version in a background thread at startup; tools wait up to 45 s for it, then return a "still building" message.
-- **`server.py`** holds the `MCPServer` app, the `INSTRUCTIONS` string (research workflow: snippets are not content, always call `get_page`) and the CLI. Tools are sync functions wrapped with `_guard` (expected errors become `"Error: ..."` strings) and registered as async via `asyncio.to_thread`.
+- **`server.py`** holds the `MCPServer` app, the `INSTRUCTIONS` string (research workflow: snippets are not content, always call `get_page`) and the CLI. Tools are sync functions wrapped with `_guard` (expected errors are re-raised as `ToolError`, which the client sees as `is_error=true` with an "Error executing tool <name>: " prefix; empty-but-valid outcomes like zero search hits stay normal text) and registered as async via `asyncio.to_thread`.
 
 ## Non-obvious details
 

@@ -9,6 +9,7 @@ import sys
 import time
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .config import Config, load_config
 from .index import Index, IndexManager, IndexNotReady
@@ -52,8 +53,10 @@ def _guard(fn):
     def wrapper(*a, **kw):
         try:
             return fn(*a, **kw)
+        except ToolError:
+            raise
         except (ValueError, IndexNotReady, RuntimeError, KeyError) as e:
-            return f"Error: {e.args[0] if e.args else e}"
+            raise ToolError(str(e.args[0] if e.args else e)) from e
 
     return wrapper
 
@@ -107,7 +110,7 @@ def search_help(query: str, version: str | None = None, section: str | None = No
     """
     idx = _index(version)
     if kind and kind not in ("instruction", "fault", "module", "dialog", "command", "concept"):
-        return "Error: kind must be one of instruction, fault, module, dialog, command, concept."
+        raise ToolError("kind must be one of instruction, fault, module, dialog, command, concept.")
     res = idx.search(query, kind=kind, section=section, limit=limit)
     if not res:
         return f"No results for {query!r} in {idx.version}. Try synonyms, a mnemonic, or fewer terms."
@@ -132,7 +135,7 @@ def get_page(page_id: str, version: str | None = None, offset: int = 0, max_char
     idx = _index(version)
     row = idx.resolve_page(page_id)
     if row is None:
-        return f"Error: no page {page_id!r} in {idx.version}. Use search_help to find page_ids."
+        raise ToolError(f"No page {page_id!r} in {idx.version}. Use search_help to find page_ids.")
     return _page_text(idx, row, offset, max_chars)
 
 
@@ -177,7 +180,7 @@ def browse_toc(node_id: str | None = None, version: str | None = None) -> str:
     try:
         kids = idx.toc_children(node_id)
     except KeyError:
-        return f"Error: {node_id!r} is not a TOC node or a page in the TOC."
+        raise ToolError(f"{node_id!r} is not a TOC node or a page in the TOC.")
     if not kids:
         return "No children."
     lines = [f"{len(kids)} item(s) in {idx.version} TOC" + (f" under {node_id}" if node_id else "") + ":"]
@@ -194,7 +197,7 @@ def get_breadcrumb(page_id: str, version: str | None = None) -> str:
     idx = _index(version)
     row = idx.resolve_page(page_id)
     if row is None:
-        return f"Error: no page {page_id!r} in {idx.version}."
+        raise ToolError(f"No page {page_id!r} in {idx.version}. Use search_help to find page_ids.")
     crumbs = json.loads(row["crumbs"] or "[]")
     lines = [f"{row['title']}  (page_id: {row['id']})"]
     if not crumbs:
@@ -231,7 +234,7 @@ def get_help_statistics(version: str | None = None) -> str:
 
     v = normalize_version(version) if version else m.default
     if v not in m.versions:
-        return f"Error: unknown version {version!r}. Available: {', '.join(m.versions)}"
+        raise ToolError(f"Unknown version {version!r}. Available: {', '.join(m.versions)}")
     st = m.state(v)
     lines = [f"version: {v}", f"build state: {st.phase}" + (f" ({st.done}/{st.total})" if st.total else "")]
     if st.error:

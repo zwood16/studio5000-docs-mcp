@@ -1,12 +1,14 @@
 """End-to-end build and query over a synthetic tree. Trees under 200 files are parsed serially, so no
 multiprocessing pool is involved."""
 
+import asyncio
 import json
 import os
 import re
 import sqlite3
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from studio5000_docs_mcp.config import Config
 from studio5000_docs_mcp import index as index_mod
@@ -164,3 +166,65 @@ def test_failed_retry_propagates(synthetic_root, tmp_path, monkeypatch):
     m._thread.join()
     with pytest.raises(RuntimeError, match="failed again on retry.*boom"):
         m.get()
+
+
+# ---------------- tool errors (ToolError -> is_error) ----------------
+
+@pytest.fixture()
+def server_tools(synthetic_root, tmp_path):
+    from studio5000_docs_mcp import server
+
+    m = IndexManager(Config(help_root=synthetic_root, db_dir=tmp_path / "db"))
+    m.build("v99")
+    server.set_manager(m)
+    yield server
+    m.get().close()
+    server._manager = None
+
+
+def test_tool_unknown_page_raises(server_tools):
+    with pytest.raises(ToolError, match="No page 'nope'"):
+        server_tools.get_page("nope")
+    with pytest.raises(ToolError, match="No page 'nope'"):
+        server_tools.get_breadcrumb("nope")
+
+
+def test_tool_bad_kind_and_version_raise(server_tools):
+    with pytest.raises(ToolError, match="kind must be"):
+        server_tools.search_help("widget", kind="bogus")
+    with pytest.raises(ToolError, match="Unknown version.*Available: v99"):
+        server_tools.get_page("ait_1", version="v1")
+
+
+def test_tool_zero_results_is_normal_text(server_tools):
+    assert "No results" in server_tools.search_help("nonexistentterm")
+    assert "No page for help id" in server_tools.get_page_by_help_id("999")
+
+
+def test_tool_no_manager_versions_raises(tmp_path):
+    from studio5000_docs_mcp import server
+
+    server.set_manager(IndexManager(Config(help_root=tmp_path / "empty", db_dir=tmp_path / "db")))
+    try:
+        with pytest.raises(ToolError, match="No Studio 5000 help folders"):
+            server.get_page("x")
+        assert "No Studio 5000 help folders" in server.list_versions()
+    finally:
+        server._manager = None
+
+
+def test_mcp_protocol_is_error_flag(server_tools):
+    from mcp import Client
+
+    async def run():
+        async with Client(server_tools.mcp) as c:
+            bad = await c.call_tool("get_page", {"page_id": "does-not-exist"})
+            good = await c.call_tool("get_page", {"page_id": "ait_1"})
+            return bad, good
+
+    bad, good = asyncio.run(run())
+    assert bad.is_error is True
+    assert bad.content[0].text == (
+        "Error executing tool get_page: No page 'does-not-exist' in v99. Use search_help to find page_ids.")
+    assert good.is_error is False
+    assert "Widget Overview" in good.content[0].text

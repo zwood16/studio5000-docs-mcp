@@ -37,6 +37,11 @@ async def main() -> int:
                 print(f"\n=== {name}({args}) isError={res.is_error}\n{text[:600]}")
                 if res.is_error:
                     return 1
+            # deliberate bad call: failures must be reported as is_error=True
+            res = await s.call_tool("get_page", {"page_id": "does-not-exist"})
+            print(f"\n=== get_page(does-not-exist) isError={res.is_error}\n{res.content[0].text[:300]}")
+            if not res.is_error:
+                return 1
     return 0
 
 

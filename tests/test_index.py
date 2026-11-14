@@ -2,6 +2,7 @@ import json
 import re
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from studio5000_docs_mcp.extract import expand_identifiers, query_tokens
 from studio5000_docs_mcp.index import extract_mnemonics
@@ -122,5 +123,7 @@ def test_other_tools(tools):
     nid = re.search(r"node_id: (\S+)", top).group(1)
     assert isinstance(tools.browse_toc(nid), str)
     assert "ait_455128" in tools.get_breadcrumb("ait_455128") or "Timer" in tools.get_breadcrumb("ait_455128")
-    assert tools.get_page("nope").startswith("Error")
-    assert tools.search_help("TON", kind="bogus").startswith("Error")
+    with pytest.raises(ToolError, match="No page 'nope'"):
+        tools.get_page("nope")
+    with pytest.raises(ToolError, match="kind must be"):
+        tools.search_help("TON", kind="bogus")
