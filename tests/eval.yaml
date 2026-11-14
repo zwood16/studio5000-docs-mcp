@@ -1,0 +1,89 @@
+# Retrieval eval: a query is a hit@3 when any expected path is in the top 3 search results.
+# Expected paths are help-root-relative and were checked by inspecting the page content in the v37 help.
+# kind (optional) restricts the search like the search_help tool argument.
+- query: what sets TON .DN
+  expected: [help/clinset/timer-counter/timer-on-delay--ton-.html]
+- query: major fault type 4 code 34
+  expected:
+    - help/clinset/input-output/major-fault-types-and-codes.html
+    - help/rs5000/profile_gui_faults_errors/major-fault-types-and-codes1.html
+    - help/clinset/timer-counter/timer-on-delay--ton-.html
+    - help/clinset/timer-counter/timer-off-delay--tof-.html
+    - help/clinset/timer-counter/retentive-timer-on--rto-.html
+- query: 1756-IF16 single-ended wiring
+  expected:
+    - help/modules/wiringdiagram/wiring-diagram---1756-if16-and--if8--single-ended-current.html
+    - help/modules/wiringdiagram/wiring-diagram---1756-if16-and--if8--single-ended-voltage.html
+    - help/modules/wiringdiagram/wiring-diagrams-1756-if16---if8.html
+- query: GSV WallClockTime attributes
+  expected: [help/clinset/input-output/access-the-wallclocktime-object.html]
+- query: MAOC output cam
+  expected: [help/clinset/motion_motion_event/maoc.html]
+- query: AOI EnableInFalse
+  expected:
+    - help/rs5000/aoi/add-on-instruction-scan-modes.html
+    - help/rs5000/aoi/add-on-instruction-definition-editor-dialog---scan-modes-tab-overview.html
+- query: produce/consume RPI limits
+  expected:
+    - publications/pm011/rpi-limitations---negotiated-default.html
+    - publications/pm011/1769-l2x-and-1769-l3x-rpi-limits.html
+    - help/rs5000/datamon_taged/Set-an-rpi-range-for-produced-tags.html
+- query: message instruction MSG
+  expected:
+    - help/clinset/input-output/message--msg-.html
+    - help/clinset/input-output/message--msg-_2.html
+- query: PID proportional integral derivative instruction
+  expected: [help/clinset/special/Proportional-integral-derivative--pid-.html]
+- query: how to jog an axis with MAJ
+  expected: [help/clinset/motion-move-instructions/motion-axis-jog--maj-.html]
+- query: file arithmetic and logic FAL
+  expected: [help/clinset/arrayfilemisc/file-arithmetic_logic-fal.html]
+- query: bit field distribute BTD
+  expected: [help/clinset/move-logical/bit-field-distribute--btd-.html]
+- query: SCL scale analog input to engineering units
+  expected: [help/clinset/proc-drives-proc-control/scl.html]
+- query: retentive timer RTO
+  expected: [help/clinset/timer-counter/retentive-timer-on--rto-.html]
+- query: timer off delay TOF done bit
+  expected: [help/clinset/timer-counter/timer-off-delay--tof-.html]
+- query: set an RPI range for produced tags
+  expected: [help/rs5000/datamon_taged/Set-an-rpi-range-for-produced-tags.html]
+- query: controller properties major faults tab
+  expected:
+    - help/rs5000/controller_config/controller-properties-dialog-box---major-faults-tab.html
+    - help/rs5000/controller_config/controller-properties-dialog-box---major-faults-tab-settings.html
+- query: clear a major fault during prescan
+  expected: [help/rs5000/profile-gui-tasks-commands/clearing-a-major-fault-during-prescan.html]
+- query: wall clock time converted to UTC
+  expected: [help/rs5000/af_utilities/wall-clock-time-converted-to-coordinated-universal-time--utc-.html]
+- query: sequencer output SQO
+  expected: [help/clinset/sequencer/Sequencer-output--sqo-.html]
+- query: FOR loop instruction
+  expected: [help/clinset/forbreak/For--for-.html]
+- query: SSV set system value
+  expected:
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-.html
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-_2.html
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-_3.html
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-_4.html
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-_5.html
+    - help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-_6.html
+- query: 1756-IF16 configuration tab floating point
+  expected: [help/modules/1756analog/configuration-tab-1756-if8-and-1756-if16--floating-point.html]
+- query: one shot ONS
+  expected: [help/clinset/bit/One-shot--ons-1.html]
+- query: AXIS_CIP_DRIVE structure
+  expected:
+    - help/clinset/cip_motion/axis_cip_drive-structure.html
+    - help/clinset/clinset_extras/axis_cip_drive-structure.html
+# added after tuning (held-out)
+- query: bit shift left BSL
+  expected: [help/clinset/arrayfileshift/Bit-shift-left--bsl-.html]
+- query: motion axis time cam MATC
+  expected: [help/clinset/motion-move-instructions/motion-axis-time-cam--matc-.html]
+- query: string concatenate CONCAT
+  expected: [help/clinset/ascii-string/string-concatenate--concat-.html]
+- query: master driven axis control
+  expected: [help/clinset/motion-move-instructions/master-driven-axis-control--mdac-.html]
+- query: modulo remainder
+  expected: [help/clinset/compute/modulo--mod-.html]

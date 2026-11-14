@@ -1,0 +1,563 @@
+"""SQLite FTS5 index: build, staleness check, search, lookups."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from .config import Config, normalize_version
+from .discovery import VersionInfo, default_version, discover
+from .extract import (
+    clean_punct,
+    expand_identifiers,
+    is_stop,
+    markdown_to_text,
+    query_tokens,
+)
+from .sources.base import HelpSource, RawPage
+from .sources.oxygen import OxygenSource
+
+SCHEMA_VERSION = 1
+TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
+# column order: title, mnemonic, keywords, breadcrumb, body, extra
+BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
+SNIPPET_COL = 4
+MNEMONIC_BONUS = 6.0
+
+SCHEMA = f"""
+CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE pages(
+  rid INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, version TEXT, path TEXT UNIQUE NOT NULL,
+  title TEXT, mnemonic TEXT, kind TEXT, section TEXT, breadcrumb TEXT, crumbs TEXT,
+  description TEXT, markdown TEXT, chars INTEGER, links TEXT, parent_id TEXT, toc_node TEXT, depth INTEGER);
+CREATE TABLE mnemonics(mnemonic TEXT NOT NULL, page_id TEXT NOT NULL);
+CREATE INDEX mnemonics_m ON mnemonics(mnemonic);
+CREATE TABLE toc(node_id TEXT PRIMARY KEY, parent_id TEXT, page_id TEXT, title TEXT, ord INTEGER);
+CREATE INDEX toc_parent ON toc(parent_id, ord);
+CREATE TABLE help_ids(help_id TEXT NOT NULL, page_id TEXT NOT NULL, PRIMARY KEY(help_id, page_id));
+CREATE VIRTUAL TABLE pages_fts USING fts5(title, mnemonic, keywords, breadcrumb, body, extra,
+  tokenize="{TOKENIZER}");
+"""
+
+_MN_RE = re.compile(r"\(([A-Z0-9_ ]+)\)")
+
+
+_MN_DASH_RE = re.compile(r"[-\u2013]\s?([A-Z][A-Z0-9_]+)$")
+
+
+def extract_mnemonics(title: str, path: str = "") -> list[str]:
+    """All parenthesised all-caps mnemonics in a title, e.g. 'Get ... (GSV) and Set ... (SSV)'.
+    Instruction-set pages titled like 'DINT to String-DTOS' use a trailing '-MNEMONIC' instead."""
+    out = []
+    for m in _MN_RE.findall(title):
+        m = m.strip()
+        if len(m) >= 2 and re.search(r"[A-Z]", m) and m not in out:
+            out.append(m)
+    if not out and path.startswith("help/clinset/"):
+        m = _MN_DASH_RE.search(title.strip())
+        if m:
+            out.append(m.group(1))
+    return out
+
+
+def section_of(path: str) -> str:
+    parts = path.split("/")
+    if parts[0] in ("help", "publications") and len(parts) > 2:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
+
+
+def classify(path: str, title: str, mnemonic: str) -> str:
+    t = title.lower().strip()
+    pl = path.lower()
+    if pl.startswith("help/clinset/") and mnemonic:
+        return "instruction"
+    if "module-errors" in pl or re.search(r"\b(faults?|errors?|exceptions?)\b", t):
+        return "fault"
+    if t.endswith(" command") or t.endswith(" commands") or pl.endswith("-command.html"):
+        return "command"
+    if re.search(r"\b(dialog box|dialog|wizard|properties)\b", t) or re.search(r"\b(tab|page|window|pane)$", t):
+        return "dialog"
+    if pl.startswith("help/modules/"):
+        return "module"
+    return "concept"
+
+
+def parse_version_arg(v: str | None) -> str | None:
+    return normalize_version(v)
+
+
+# ---------------------------------------------------------------- build
+
+def build_index(source: HelpSource, db_path: Path, progress=None) -> dict:
+    """Build the DB into a temp file next to db_path, then atomically rename."""
+    t0 = time.time()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = db_path.with_name(db_path.name + f".tmp-{os.getpid()}")
+    if tmp.exists():
+        tmp.unlink()
+    fp = source.fingerprint()
+
+    pages: list[RawPage] = []
+    for p in source.iter_pages():
+        pages.append(p)
+    t_parse = time.time() - t0
+
+    # ---- ids
+    id_counts: dict[str, int] = {}
+    for p in pages:
+        if p.identifier:
+            id_counts[p.identifier] = id_counts.get(p.identifier, 0) + 1
+    path_to_id: dict[str, str] = {}
+    for p in pages:
+        path_to_id[p.path] = p.identifier if p.identifier and id_counts[p.identifier] == 1 else p.path
+    by_path = {p.path: p for p in pages}
+
+    # ---- toc
+    nodes = source.toc()
+    node_by_id = {n.node_id: n for n in nodes}
+    href_to_node: dict[str, str] = {}
+    for n in nodes:
+        if n.href and n.href in by_path and n.href not in href_to_node:
+            href_to_node[n.href] = n.node_id
+
+    def toc_crumbs(node_id: str) -> list[tuple[str, str | None]]:
+        chain = []
+        cur = node_by_id[node_id].parent_id
+        guard = 0
+        while cur and guard < 100:
+            n = node_by_id[cur]
+            chain.append((n.title, path_to_id.get(n.href) if n.href else None))
+            cur = n.parent_id
+            guard += 1
+        return chain[::-1]
+
+    csv_paths = source.csv_toc_paths()
+    memo: dict[str, list[tuple[str, str | None]]] = {}
+
+    def crumbs_for(path: str, stack: tuple[str, ...] = ()) -> list[tuple[str, str | None]]:
+        if path in memo:
+            return memo[path]
+        res: list[tuple[str, str | None]] = []
+        if path in href_to_node:
+            res = toc_crumbs(href_to_node[path])
+        else:
+            page = by_path.get(path)
+            rel = page.relation if page else ""
+            if rel and rel in by_path and rel != path and rel not in stack:
+                par = by_path[rel]
+                res = crumbs_for(rel, stack + (path,)) + [(par.title, path_to_id[rel])]
+            elif path in csv_paths:
+                res = [(t, None) for t in csv_paths[path]]
+        memo[path] = res
+        return res
+
+    # ---- link rewrite
+    link_re = re.compile(r"\]\(page:([^)]+)\)")
+
+    def rewrite(md: str) -> str:
+        def sub(m: re.Match) -> str:
+            tid = path_to_id.get(m.group(1))
+            return f"](page:{tid})" if tid else "]()"
+
+        out = link_re.sub(sub, md)
+        # unresolved links: drop the markup, keep the text
+        return re.sub(r"\[([^\]]*)\]\(\)", r"\1", out)
+
+    keywords = source.keywords()
+    help_ids = source.help_ids()
+
+    conn = sqlite3.connect(tmp)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.executescript(SCHEMA)
+    version = source.version
+
+    n_with_crumbs = 0
+    n_mn = 0
+    for rid, p in enumerate(sorted(pages, key=lambda x: x.path), start=1):
+        pid = path_to_id[p.path]
+        mns = extract_mnemonics(p.title, p.path)
+        mnemonic = " ".join(mns)
+        kind = classify(p.path, p.title, mnemonic)
+        crumbs = crumbs_for(p.path)
+        if crumbs:
+            n_with_crumbs += 1
+        breadcrumb = " > ".join(t for t, _ in crumbs)
+        md = rewrite(p.markdown)
+        out_ids = [path_to_id[l] for l in p.links if l in path_to_id]
+        parent_id = path_to_id.get(p.relation) if p.relation else None
+        kw = " ; ".join(keywords.get(p.path, []))
+        body = markdown_to_text(md)
+        title_f = clean_punct(p.title)
+        conn.execute(
+            "INSERT INTO pages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rid, pid, version, p.path, p.title, mnemonic, kind, section_of(p.path), breadcrumb,
+             json.dumps(crumbs), p.description, md, len(md), json.dumps(out_ids), parent_id,
+             href_to_node.get(p.path), len(crumbs)),
+        )
+        for m in mns:
+            conn.execute("INSERT INTO mnemonics VALUES (?,?)", (m, pid))
+            n_mn += 1
+        bc_f = clean_punct(breadcrumb)
+        kw_f = clean_punct(kw)
+        title_col = f"{title_f} {expand_identifiers(title_f)}".strip()
+        extra = " ".join(x for x in (expand_identifiers(body), expand_identifiers(kw_f), expand_identifiers(bc_f)) if x)
+        conn.execute(
+            "INSERT INTO pages_fts(rowid,title,mnemonic,keywords,breadcrumb,body,extra) VALUES (?,?,?,?,?,?,?)",
+            (rid, title_col, mnemonic, f"{kw_f} {expand_identifiers(kw_f)}".strip(), bc_f, body, extra),
+        )
+        if progress and rid % 500 == 0:
+            progress("indexing", rid, len(pages))
+
+    for n in nodes:
+        pg = path_to_id.get(n.href) if n.href else None
+        conn.execute("INSERT INTO toc VALUES (?,?,?,?,?)", (n.node_id, n.parent_id, pg, n.title, n.ord))
+    seen_h = set()
+    for hid, hp in help_ids:
+        pg = path_to_id.get(hp)
+        if pg and (hid, pg) not in seen_h:
+            seen_h.add((hid, pg))
+            conn.execute("INSERT INTO help_ids VALUES (?,?)", (hid, pg))
+
+    conn.execute("INSERT INTO pages_fts(pages_fts) VALUES('optimize')")
+    elapsed = time.time() - t0
+    stats = {
+        "pages": len(pages),
+        "pages_with_breadcrumb": n_with_crumbs,
+        "toc_nodes": len(nodes),
+        "help_ids": len(seen_h),
+        "mnemonic_entries": n_mn,
+        "build_seconds": round(elapsed, 2),
+        "parse_seconds": round(t_parse, 2),
+    }
+    meta = {"fingerprint": fp, "schema": str(SCHEMA_VERSION), "version": version,
+            "root": str(source.root), "built_at": str(int(time.time())), "stats": json.dumps(stats)}
+    conn.executemany("INSERT INTO meta VALUES (?,?)", list(meta.items()))
+    conn.commit()
+    conn.close()
+    os.replace(tmp, db_path)
+    return stats
+
+
+def db_fingerprint(source: HelpSource) -> str:
+    return f"{source.fingerprint()}:schema{SCHEMA_VERSION}:{source.root}:{TOKENIZER}"
+
+
+# ---------------------------------------------------------------- query
+
+class Index:
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.lock = threading.RLock()
+        self.version = self._meta("version")
+
+    def close(self):
+        self.conn.close()
+
+    def _meta(self, key: str) -> str | None:
+        r = self.conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return r[0] if r else None
+
+    def stats(self) -> dict:
+        with self.lock:
+            c = self.conn
+            kinds = {r[0]: r[1] for r in c.execute("SELECT kind, count(*) FROM pages GROUP BY kind")}
+            sections = {r[0]: r[1] for r in c.execute("SELECT section, count(*) FROM pages GROUP BY section ORDER BY 2 DESC")}
+            return {
+                "version": self.version,
+                "pages": c.execute("SELECT count(*) FROM pages").fetchone()[0],
+                "with_breadcrumb": c.execute("SELECT count(*) FROM pages WHERE breadcrumb != ''").fetchone()[0],
+                "toc_nodes": c.execute("SELECT count(*) FROM toc").fetchone()[0],
+                "help_ids": c.execute("SELECT count(DISTINCT help_id) FROM help_ids").fetchone()[0],
+                "mnemonics": c.execute("SELECT count(DISTINCT mnemonic) FROM mnemonics").fetchone()[0],
+                "kinds": kinds,
+                "sections": sections,
+                "root": self._meta("root"),
+                "built_at": int(self._meta("built_at") or 0),
+                "build_stats": json.loads(self._meta("stats") or "{}"),
+            }
+
+    # ---- lookups
+    def resolve_page(self, ref: str) -> sqlite3.Row | None:
+        ref = (ref or "").strip()
+        if not ref:
+            return None
+        norm = ref.replace("\\", "/").split("#", 1)[0].lstrip("/")
+        with self.lock:
+            for sql, arg in (
+                ("SELECT * FROM pages WHERE id=?", ref),
+                ("SELECT * FROM pages WHERE path=?", norm),
+                ("SELECT * FROM pages WHERE lower(id)=lower(?)", ref),
+                ("SELECT * FROM pages WHERE lower(path)=lower(?)", norm),
+            ):
+                r = self.conn.execute(sql, (arg,)).fetchone()
+                if r:
+                    return r
+        return None
+
+    def instruction(self, mnemonic: str) -> list[sqlite3.Row]:
+        m = mnemonic.strip().upper()
+        with self.lock:
+            return self.conn.execute(
+                """SELECT p.* FROM mnemonics m JOIN pages p ON p.id=m.page_id WHERE m.mnemonic=?
+                   ORDER BY (p.path LIKE 'help/clinset/%') DESC, (p.kind='instruction') DESC, p.depth, p.path""",
+                (m,),
+            ).fetchall()
+
+    def by_help_id(self, help_id: str) -> list[sqlite3.Row]:
+        with self.lock:
+            rows = self.conn.execute(
+                """SELECT p.* FROM help_ids h JOIN pages p ON p.id=h.page_id WHERE h.help_id=?
+                   ORDER BY p.path""", (help_id.strip(),)).fetchall()
+            if not rows:
+                rows = self.conn.execute(
+                    """SELECT p.* FROM help_ids h JOIN pages p ON p.id=h.page_id WHERE lower(h.help_id)=lower(?)
+                       ORDER BY p.path""", (help_id.strip(),)).fetchall()
+            return rows
+
+    def toc_children(self, node_id: str | None) -> list[dict]:
+        with self.lock:
+            if node_id:
+                if not self.conn.execute("SELECT 1 FROM toc WHERE node_id=?", (node_id,)).fetchone():
+                    pg = self.resolve_page(node_id)
+                    if pg is None or not pg["toc_node"]:
+                        raise KeyError(node_id)
+                    node_id = pg["toc_node"]
+                rows = self.conn.execute(
+                    "SELECT * FROM toc WHERE parent_id=? ORDER BY ord", (node_id,)).fetchall()
+            else:
+                rows = self.conn.execute("SELECT * FROM toc WHERE parent_id IS NULL ORDER BY ord").fetchall()
+            out = []
+            for r in rows:
+                n = self.conn.execute("SELECT count(*) FROM toc WHERE parent_id=?", (r["node_id"],)).fetchone()[0]
+                out.append({"node_id": r["node_id"], "title": r["title"], "page_id": r["page_id"], "children": n})
+            return out
+
+    def toc_node_title(self, node_id: str) -> str | None:
+        r = self.conn.execute("SELECT title FROM toc WHERE node_id=?", (node_id,)).fetchone()
+        return r[0] if r else None
+
+    def titles_for(self, ids: list[str]) -> dict[str, tuple[str, str]]:
+        if not ids:
+            return {}
+        with self.lock:
+            q = ",".join("?" * len(ids))
+            return {r["id"]: (r["title"], r["path"]) for r in
+                    self.conn.execute(f"SELECT id,title,path FROM pages WHERE id IN ({q})", ids)}
+
+    # ---- search
+    def _fts(self, match: str, kind: str | None, section: str | None, limit: int,
+             mnemonics: list[str] | None = None) -> list[sqlite3.Row]:
+        # bm25 IDF is table-wide, so a mnemonic like FOR (a common word) barely scores in the mnemonic
+        # column; ALL-CAPS query tokens that equal a page mnemonic therefore get a flat bonus.
+        bonus_sql = ""
+        bonus_args: list = []
+        for m in mnemonics or []:
+            bonus_sql += " - (CASE WHEN ' ' || p.mnemonic || ' ' LIKE ? THEN ? ELSE 0 END)"
+            bonus_args += [f"% {m} %", MNEMONIC_BONUS]
+        where = ["pages_fts MATCH ?"]
+        args: list = [match]
+        if kind:
+            where.append("p.kind=?")
+            args.append(kind)
+        if section:
+            s = section.strip().strip("/")
+            where.append("(p.section=? OR p.section=? OR p.section LIKE ?)")
+            args += [s, f"help/{s}", f"{s}/%"]
+        w = ",".join(str(x) for x in BM25_WEIGHTS)
+        sql = f"""SELECT p.rid, p.id, p.path, p.title, p.mnemonic, p.kind, p.section, p.breadcrumb, p.description,
+                         bm25(pages_fts, {w}){bonus_sql} AS score,
+                         snippet(pages_fts, {SNIPPET_COL}, '**', '**', ' ... ', 32) AS snip
+                  FROM pages_fts JOIN pages p ON p.rid = pages_fts.rowid
+                  WHERE {' AND '.join(where)} ORDER BY score LIMIT ?"""
+        args.append(limit)
+        with self.lock:
+            try:
+                return self.conn.execute(sql, bonus_args + args).fetchall()
+            except sqlite3.OperationalError:
+                return []
+
+    def search(self, query: str, kind: str | None = None, section: str | None = None, limit: int = 10) -> list[dict]:
+        limit = max(1, min(int(limit), 50))
+        raw_tokens = query_tokens(query)
+        if not raw_tokens:
+            return []
+        toks = [t for t in raw_tokens if not is_stop(t)] or raw_tokens
+        quoted = ['"%s"' % t.replace('"', "") for t in toks]
+        mn_toks = [t for t in toks if t.isupper() and len(t) > 1 and not t.startswith(".")][:4]
+        results: list[dict] = []
+        seen: set[int] = set()
+
+        def add(row: sqlite3.Row, tier: int):
+            if row["rid"] in seen:
+                return
+            seen.add(row["rid"])
+            results.append({
+                "id": row["id"], "path": row["path"], "title": row["title"], "mnemonic": row["mnemonic"],
+                "kind": row["kind"], "section": row["section"], "breadcrumb": row["breadcrumb"],
+                "snippet": (row["snip"] if "snip" in row.keys() and row["snip"] else row["description"]) or "",
+                "tier": tier,
+            })
+
+        # tier 0: exact title / mnemonic matches
+        tier0: list[sqlite3.Row] = []
+        single = len(toks) == 1
+        with self.lock:
+            qnorm = " ".join(t.lower() for t in raw_tokens)
+            tier0 += self.conn.execute(
+                "SELECT * FROM pages WHERE lower(title)=? ORDER BY (path LIKE 'help/clinset/%') DESC, path LIMIT 5",
+                (query.strip().lower(),)).fetchall()
+            if single:  # a lone mnemonic: go straight to its instruction page(s)
+                tier0 += self.instruction(toks[0])[:5]
+        mrows = []
+        for r in tier0:
+            if kind and r["kind"] != kind:
+                continue
+            if section:
+                s = section.strip().strip("/")
+                if not (r["section"] == s or r["section"] == f"help/{s}" or r["section"].startswith(s + "/")):
+                    continue
+            mrows.append(r)
+        if mrows:
+            snips = {x["rid"]: x for x in self._fts(" OR ".join(quoted), kind, section, 200)}
+            for r in mrows:
+                s = snips.get(r["rid"])
+                add(s if s is not None else r, 0)
+
+        # tier 1: all terms, tier 2: any term
+        for r in self._fts(" ".join(quoted), kind, section, limit * 3, mn_toks):
+            add(r, 1)
+        if len(results) < limit and len(quoted) > 1:
+            for r in self._fts(" OR ".join(quoted), kind, section, limit * 3, mn_toks):
+                add(r, 2)
+        return results[:limit]
+
+
+# ---------------------------------------------------------------- manager
+
+@dataclass
+class BuildState:
+    phase: str = "pending"  # pending | scanning | parsing | indexing | ready | error
+    done: int = 0
+    total: int = 0
+    started: float = 0.0
+    finished: float = 0.0
+    error: str | None = None
+    rebuilt: bool = False
+    stats: dict = field(default_factory=dict)
+
+
+class IndexNotReady(Exception):
+    pass
+
+
+class IndexManager:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.versions: dict[str, VersionInfo] = discover(cfg)
+        self.default = default_version(self.versions, cfg.version)
+        self._indexes: dict[str, Index] = {}
+        self._states: dict[str, BuildState] = {v: BuildState() for v in self.versions}
+        self._locks: dict[str, threading.Lock] = {v: threading.Lock() for v in self.versions}
+        self._ready: dict[str, threading.Event] = {v: threading.Event() for v in self.versions}
+        self._thread: threading.Thread | None = None
+
+    def db_path(self, version: str) -> Path:
+        return self.cfg.resolved_db_dir() / f"{version}.sqlite"
+
+    def state(self, version: str) -> BuildState:
+        return self._states[version]
+
+    def start_background(self) -> None:
+        if self.default and self._thread is None:
+            self._thread = threading.Thread(target=self._safe_build, args=(self.default,), daemon=True,
+                                            name="index-build")
+            self._thread.start()
+
+    def _safe_build(self, version: str) -> None:
+        try:
+            self.build(version)
+        except Exception as e:  # recorded in state; tools report it
+            st = self._states[version]
+            st.phase, st.error, st.finished = "error", f"{type(e).__name__}: {e}", time.time()
+            self._ready[version].set()
+
+    def build(self, version: str, force: bool | None = None) -> Index:
+        """Open the cached index, rebuilding when stale. Thread-safe and idempotent."""
+        force = self.cfg.force_rebuild if force is None else force
+        with self._locks[version]:
+            if version in self._indexes and not force:
+                return self._indexes[version]
+            info = self.versions[version]
+            st = self._states[version]
+            st.phase, st.started, st.error, st.done, st.total = "scanning", time.time(), None, 0, 0
+            if info.format != "oxygen":
+                raise ValueError(f"{version}: legacy (non-Oxygen) help format is not supported yet")
+
+            def progress(done: int, total: int):
+                st.phase, st.done, st.total = "parsing", done, total
+
+            source = OxygenSource(info.root, version, progress=progress)
+            fp = db_fingerprint(source)
+            dbp = self.db_path(version)
+            fresh = False
+            if dbp.exists() and not force:
+                try:
+                    idx = Index(dbp)
+                    if idx._meta("fingerprint") == fp:
+                        fresh = True
+                    else:
+                        idx.close()
+                except sqlite3.DatabaseError:
+                    pass
+            if not fresh:
+                # store the combined fingerprint
+                orig = source.fingerprint
+                source.fingerprint = lambda: fp  # type: ignore[method-assign]
+                st.phase = "parsing"
+                stats = build_index(source, dbp, progress=lambda ph, d, t: setattr(st, "phase", ph))
+                source.fingerprint = orig  # type: ignore[method-assign]
+                idx = Index(dbp)
+                st.rebuilt, st.stats = True, stats
+            else:
+                st.rebuilt = False
+                st.stats = json.loads(idx._meta("stats") or "{}")
+            old = self._indexes.get(version)
+            self._indexes[version] = idx
+            if old:
+                old.close()
+            st.phase, st.finished = "ready", time.time()
+            st.done = st.total = st.stats.get("pages", 0)
+            self._ready[version].set()
+            return idx
+
+    def get(self, version: str | None = None, wait: float = 45.0) -> Index:
+        if not self.versions:
+            raise ValueError(
+                "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the 'Logix Designer/ENU' folder "
+                "or an 'rs5000' help folder.")
+        v = normalize_version(version) if version else self.default
+        if v not in self.versions:
+            raise ValueError(f"Unknown version {version!r}. Available: {', '.join(self.versions)}")
+        if v in self._indexes:
+            return self._indexes[v]
+        if v == self.default and self._thread is not None:
+            if not self._ready[v].wait(wait):
+                st = self._states[v]
+                raise IndexNotReady(
+                    f"The index for {v} is still building ({st.phase}, {st.done}/{st.total} pages). "
+                    "Retry in a few seconds.")
+            st = self._states[v]
+            if st.error:
+                raise RuntimeError(f"Index build for {v} failed: {st.error}")
+            return self._indexes[v]
+        return self.build(v)

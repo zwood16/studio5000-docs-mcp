@@ -1,2 +1,5 @@
-def main() -> None:
-    print("Hello from studio5000-docs-mcp!")
+def main():
+    from .server import main as _m
+    _m()
+
+__all__ = ["main"]
