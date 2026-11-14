@@ -1,4 +1,4 @@
-"""FastMCP server: tool definitions and CLI entry point."""
+"""MCP server (mcp SDK MCPServer): tool definitions and CLI entry point."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 import sys
 import time
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .config import Config, load_config
 from .index import Index, IndexManager, IndexNotReady
@@ -31,7 +31,7 @@ TIPS
 - get_help_statistics shows index build progress if results are empty or a tool says the index is still building.
 """
 
-mcp = FastMCP("studio5000-docs", instructions=INSTRUCTIONS)
+mcp = MCPServer("studio5000-docs", instructions=INSTRUCTIONS)
 
 _manager: IndexManager | None = None
 

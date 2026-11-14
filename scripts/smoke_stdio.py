@@ -17,10 +17,10 @@ async def main() -> int:
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             init = await s.initialize()
-            print("server:", init.serverInfo.name, "| instructions chars:", len(init.instructions or ""))
+            print("server:", init.server_info.name, "| instructions chars:", len(init.instructions or ""))
             tools = (await s.list_tools()).tools
             for t in tools:
-                print(" tool:", t.name, list(t.inputSchema.get("properties", {})))
+                print(" tool:", t.name, list(t.input_schema.get("properties", {})))
             calls = [
                 ("list_versions", {}),
                 ("search_help", {"query": "what sets TON .DN", "limit": 3}),
@@ -34,8 +34,8 @@ async def main() -> int:
             for name, args in calls:
                 res = await s.call_tool(name, args)
                 text = res.content[0].text
-                print(f"\n=== {name}({args}) isError={res.isError}\n{text[:600]}")
-                if res.isError:
+                print(f"\n=== {name}({args}) isError={res.is_error}\n{text[:600]}")
+                if res.is_error:
                     return 1
     return 0
 
