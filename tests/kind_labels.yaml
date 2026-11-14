@@ -1,0 +1,102 @@
+# Hand-labelled page kinds (paths only, no page text). Labels follow the definitions in tests/test_kind.py.
+# tuning: stratified sample (seed 1, 10 per old kind) plus hand-picked known cases; used to design classify().
+# holdout: 30 pages drawn with seed 2024 and labelled before the new classifier was run on them.
+tuning:
+  - {path: help/rs5000/af_utilities/open-command_2.html, kind: command}
+  - {path: help/rs5000/sfc/go-to--element-name--command.html, kind: command}
+  - {path: help/rs5000/af_utilities/edit--component-name--properties-command.html, kind: command}
+  - {path: help/rs5000/common_help/command_help/start-page-command.html, kind: command}
+  - {path: help/rs5000/af_utilities/online-books----l5550--import-export-reference-command.html, kind: command}
+  - {path: help/rs5000/menu_toolbar/open-instruction-definition-command.html, kind: command}
+  - {path: help/rs5000/menu_toolbar/cancel-command.html, kind: command}
+  - {path: help/rs5000/menu_toolbar/import---program-command.html, kind: command}
+  - {path: help/rs5000/function_block/properties-command.html, kind: command}
+  - {path: help/rs5000/af_utilities/watch-command.html, kind: command}
+  - {path: help/clinset/input-output/access-the-controllerdevice-object.html, kind: concept, note: "GSV/SSV object attribute table, no mnemonic; ambiguous"}
+  - {path: help/rs5000/navigate/use-the-right-mouse-button.html, kind: concept}
+  - {path: help/clinset/cip_motion/-ra--specific-start-inhibits.html, kind: concept}
+  - {path: help/rs5000/lang_switch/trans-product_name_rsl5k-appproj.html, kind: concept}
+  - {path: help/rs5000/motion/axisfault.html, kind: fault, note: "attribute listing fault bits; ambiguous concept/fault"}
+  - {path: help/rs5000/structured_text_/enter-tags-in-the-structured-text-editor.html, kind: concept}
+  - {path: common-content/comm-attributes/fbd-functions.html, kind: concept}
+  - {path: help/rs5000/motion/cipmotion_gui_dialogs/ethernet-system/select-the-catalog-number-as-the-data-source.html, kind: concept}
+  - {path: help/rs5000/datamon_taged/Create-a-consumed-tag.html, kind: concept}
+  - {path: help/rs5000/controller_config/failed-to-modify-the-dh485-protocol-configuration.html, kind: fault}
+  - {path: help/rs5000/motion/torque-filters-page.html, kind: dialog}
+  - {path: help/rs5000/alarms/alma/configuration-properties-dialog-box---tag-tab.html, kind: dialog}
+  - {path: help/rs5000/function_block/function-block-properties-dialog-box---storage-array-tab--mstd-.html, kind: dialog}
+  - {path: help/modules/miscmodules/excitation-tab-.html, kind: dialog, note: "tab of a module; dialog vs module ambiguous"}
+  - {path: help/modules/drivelogix/module-properties-dialog-syl-config-tab-overview-1756-synch.html, kind: dialog}
+  - {path: help/modules/flexanalog/module-properties-dialog-box---hart-command-tab-overview.html, kind: dialog}
+  - {path: help/rs5000/program_config/edit-external-routine-properties_2.html, kind: concept}
+  - {path: help/rs5000/motion/cipmotion_gui_dialogs/sercos-analog-system/output-tab-overview--axis_servo_drive-.html, kind: dialog}
+  - {path: help/modules/1756analog/1756common/modprop-sercos-info-m03se-m08se-m16se-m04se-pm16se.html, kind: dialog}
+  - {path: help/rs5000/ladder_editor/failed-to-modify-the-properties-for-the-routine--routine-name-.html, kind: fault}
+  - {path: help/rs5000/logixac/notification-or-error-messages.html, kind: fault}
+  - {path: help/modules/module-errors/Channel-1-scaler-must-be-zero-when-in-counter-not-used-mode.html, kind: fault}
+  - {path: help/modules/module-errors/Module-configuration-does-not-match-software-configuration--cannot-continue-.html, kind: fault}
+  - {path: help/rs5000/menu_toolbar/error---failed-to-retrieve-information.html, kind: fault}
+  - {path: help/clinset/cip_motion/exception-factory-limit-info-attrib.html, kind: concept, note: "axis attribute reference, not an error page"}
+  - {path: help/modules/module-errors/when-interleave-interrupts-set-real-time-sample-error.html, kind: fault}
+  - {path: help/modules/module-errors/Channel-2-hart-current-ratio-limit-is-not-in-range.html, kind: fault}
+  - {path: help/rs5000/profile_gui_faults_errors/Additional-fault-information--1756-hsc.html, kind: fault}
+  - {path: help/modules/module-errors/Ramp-alarm-latching-and-alarms-inconsistent.html, kind: fault}
+  - {path: help/modules/module-errors/User-program-value-and-program-state-inconsistent.html, kind: fault}
+  - {path: help/clinset/safety/dcstm.html, kind: instruction}
+  - {path: help/clinset/metalforms/mmvc.html, kind: instruction}
+  - {path: help/clinset/move-logical/clear--clr-.html, kind: instruction}
+  - {path: help/clinset/metalforms/main-valve-control--mvc-.html, kind: instruction}
+  - {path: help/clinset/metalforms/camshaft-monitor--csm-.html, kind: instruction}
+  - {path: help/clinset/proc-drives-proc-control/tot.html, kind: instruction}
+  - {path: help/clinset/motion_multiaxis_coordinated_motion/mclm.html, kind: instruction}
+  - {path: help/clinset/arrayfilemisc/incremental-mode-flow-chart-fsc.html, kind: concept, note: "image-only flow chart under FSC; ambiguous"}
+  - {path: help/clinset/proc-drives-drives/pulse-multiplier--pmul-.html, kind: instruction}
+  - {path: help/clinset/safety/diverse-input--din-.html, kind: instruction}
+  - {path: help/modules/1756analog/1756common/view-backplane-information--status--and-chassis-information.html, kind: module, note: "module backplane tab procedure; ambiguous"}
+  - {path: help/modules/1756analog/configuration-tab-1756-if6i-and--if6cis--floating-point.html, kind: dialog, note: "tab of a module; dialog vs module ambiguous"}
+  - {path: help/modules/adapters/adapter-features-1794-acn15.html, kind: module}
+  - {path: help/modules/1756analog/1756discrete---moving-to-aop/1756-im16i.html, kind: module}
+  - {path: help/modules/drivelogix/module-defined-data-types-powerflex-700h-via-20-comm-c-or-20-comm-e.html, kind: module}
+  - {path: help/modules/panelview/data-types-panelview-8-int.html, kind: module}
+  - {path: help/modules/flexanalog/what-is-flex-i-o-_2.html, kind: module, note: "general I/O system overview under modules; ambiguous"}
+  - {path: help/modules/wiringdiagram/flex-ex-i-o-module-wiring-diagrams.html, kind: module}
+  - {path: help/modules/1756analog/configuration-tab-1756-if8-and-1756-if16--integer_2.html, kind: dialog, note: "tab of a module; dialog vs module ambiguous"}
+  - {path: help/modules/drivelogix/data-types-1336t-forcedrives.html, kind: module}
+  - {path: help/rs5000/af_utilities/-product_name_rsl5k--application-main-window.html, kind: dialog, note: "IDE UI surface"}
+  - {path: help/rs5000/af_gx_lib/Failed-to-delete-component.html, kind: fault, note: "software error message"}
+  - {path: help/rs5000/af_gx_lib/Failed-to-create-module-profile.html, kind: fault, note: "software error message"}
+  - {path: help/clinset/alarm/alarm-instructions.html, kind: concept, note: "clinset category overview"}
+  - {path: help/modules/wiringdiagram/wiring-diagram---1756-if16-and--if8--single-ended-current.html, kind: module, note: "wiring diagram"}
+  - {path: help/modules/module-errors/-rs_lc--or--ftlx--error.html, kind: fault, note: "module-errors page"}
+  - {path: help/clinset/input-output/get-system-value--gsv--and-set-system-value--ssv-.html, kind: instruction, note: "GSV/SSV"}
+holdout:
+  - {path: help/rs5000/logixac/failed-to-launch-matching-emulator.html, kind: fault}
+  - {path: help/modules/flexdiscrete/-configuration-tab-1797-ibn16.html, kind: dialog, note: "PVLV tab description; ambiguous"}
+  - {path: help/rs5000/plantpaxprops/pvlv-active-command-source.html, kind: dialog}
+  - {path: help/rs5000/aoi/failed-to-change-instruction-s-class-to-safety--.html, kind: fault}
+  - {path: help/modules/module-errors/Channel-5-notch-filter-invalid.html, kind: fault}
+  - {path: help/rs5000/function_block/function-block-diagram-editor.html, kind: concept, note: "editor overview; ambiguous concept/dialog"}
+  - {path: help/rs5000/af_utilities/generate-signature-command.html, kind: command}
+  - {path: help/rs5000/motion/failed-to-create-an-axis-or-coordinate-system-in-the-motion-group_2.html, kind: fault}
+  - {path: help/rs5000/af_gx_lib/motion-group-fault-help-command.html, kind: command}
+  - {path: help/rs5000/structured_text_/argument-list-dialog-box---jsr-instruction.html, kind: dialog}
+  - {path: help/rs5000/motion/alternate-update-period-not-a-multiple-of-base-update-period.html, kind: fault}
+  - {path: help/rs5000/datamon_taged/Create-a-cip-energy-object-backed-tag.html, kind: concept}
+  - {path: help/rs5000/function_block/next-sheet-command.html, kind: command}
+  - {path: help/rs5000/motion/clear-the-fault-and-alarm-log-for-an-axis.html, kind: concept}
+  - {path: help/rs5000/search-replace/search-using-find_2.html, kind: concept}
+  - {path: help/modules/wiringdiagram/high-speed-differential-wiring---1756-if16---if8.html, kind: module}
+  - {path: help/rs5000/comments_correlate/construct-a-communications-path-to-the-controller.html, kind: concept}
+  - {path: help/rs5000/motion/please-enter-a-value-within-range_2.html, kind: fault}
+  - {path: help/rs5000/controller_config/how-do-i-open-the-controller-properties-dialog-box.html, kind: concept}
+  - {path: help/rs5000/motion/cipmotion_gui_dialogs/motion-common/motion-group-wiz-attribute-tab.html, kind: dialog}
+  - {path: help/clinset/motion-move-instructions/motion-axis-time-cam--matc-.html, kind: instruction}
+  - {path: help/modules/module-errors/Electronic-keying-not-supported.html, kind: fault}
+  - {path: help/rs5000/logixac/failed-to-convert-an-older-project-file_2.html, kind: fault}
+  - {path: help/rs5000/trending/failed-to-modify-trend-properties---floating-point-underflow-occurred-on-target-value.html, kind: fault}
+  - {path: help/modules/1756analog/channel-default-values---1756-it6i---it6i2.html, kind: module}
+  - {path: help/rs5000/motion/drivehardfault.html, kind: fault, note: "attribute describing fault bits; ambiguous"}
+  - {path: help/modules/module-errors/Real-time-sample-too-large.html, kind: fault}
+  - {path: help/rs5000/function_block/function-block-properties-dialog-box---configure-tab--d3sd-.html, kind: dialog}
+  - {path: help/clinset/equipment-sequence-instructions/equipment-sequence-override--sovr-.html, kind: instruction}
+  - {path: help/rs5000/datamon_taged/Cannot-delete-by-reference-wire-online.html, kind: fault}

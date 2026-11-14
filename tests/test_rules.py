@@ -36,6 +36,17 @@ def test_extract_mnemonics_dash_form_only_in_clinset():
     ("help/a/b.html", "Controller Properties dialog box", "", "dialog"),
     ("help/a/b.html", "General tab", "", "dialog"),
     ("help/a/b.html", "Getting started", "", "concept"),
+    (CLINSET, "Incremental Mode Flow Chart-FSC", "FSC", "concept"),
+    ("help/a/b.html", "Failed to delete component", "", "fault"),
+    ("help/a/b.html", "Unable to download to controller.", "", "fault"),
+    ("help/a/b.html", "Error - Failed to retrieve information", "", "fault"),
+    ("help/a/b.html", "Controller Properties dialog box - Major Faults tab", "", "dialog"),
+    ("help/modules/m.html", "Configuration Tab 1756-IF6I and -IF6CIS", "", "dialog"),
+    ("help/a/b.html", "Module Properties - General for 1756-IF16", "", "dialog"),
+    ("help/a/b.html", "Edit routine properties", "", "concept"),
+    ("help/a/b.html", "Clear Axis Faults command", "", "command"),
+    ("help/a/b.html", "Create-Configure Module 1734-AENT", "", "module"),
+    ("help/modules/w/x.html", "Wiring Diagram - 1756-IF16", "", "module"),
 ])
 def test_classify(path, title, mn, kind):
     assert classify(path, title, mn) == kind

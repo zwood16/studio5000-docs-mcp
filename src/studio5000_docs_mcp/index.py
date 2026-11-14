@@ -23,7 +23,7 @@ from .extract import (
 from .sources.base import HelpSource, RawPage
 from .sources.oxygen import OxygenSource
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 # column order: title, mnemonic, keywords, breadcrumb, body, extra
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
@@ -73,18 +73,37 @@ def section_of(path: str) -> str:
     return parts[0]
 
 
+_FAULT_START_RE = re.compile(r"^(failed to|unable to|cannot|can't|could not|error\b)")
+_FAULT_WORD_RE = re.compile(r"\b(faults?|errors?|unhandled exception)\b")
+_DIALOG_RE = re.compile(r"\b(dialog box|dialog|wizard|tab)\b|\b(page|window|pane)$")
+_PROPS_RE = re.compile(r"\bProperties( -|$)")  # case-sensitive: "Module Properties - General", not "Edit routine properties"
+_CATALOG_RE = re.compile(r"\b\d{4}[A-Z]?-[A-Z0-9]+")
+
+
 def classify(path: str, title: str, mnemonic: str) -> str:
+    """Page kind from path and title. Order matters: the first matching rule wins.
+
+    instruction: help/clinset page with a mnemonic (flow-chart image pages excluded)
+    fault:       module-errors folder, error-message titles ("Failed to ...") or fault/error words
+                 (a dialog/tab page about faults stays a dialog)
+    command:     "... command" pages
+    dialog:      dialog box, wizard, tab, page, window or pane pages; a title-case "Properties" heading
+    module:      anything under help/modules, or a page naming a catalog-numbered module
+    concept:     the rest (overviews, procedures, attribute references)
+    """
     t = title.lower().strip()
     pl = path.lower()
-    if pl.startswith("help/clinset/") and mnemonic:
+    if pl.startswith("help/clinset/") and mnemonic and "flow chart" not in t:
         return "instruction"
-    if "module-errors" in pl or re.search(r"\b(faults?|errors?|exceptions?)\b", t):
+    if "module-errors" in pl or _FAULT_START_RE.search(t):
         return "fault"
     if t.endswith(" command") or t.endswith(" commands") or pl.endswith("-command.html"):
         return "command"
-    if re.search(r"\b(dialog box|dialog|wizard|properties)\b", t) or re.search(r"\b(tab|page|window|pane)$", t):
+    if _DIALOG_RE.search(t) or _PROPS_RE.search(title):
         return "dialog"
-    if pl.startswith("help/modules/"):
+    if _FAULT_WORD_RE.search(t):
+        return "fault"
+    if pl.startswith("help/modules/") or _CATALOG_RE.search(title):
         return "module"
     return "concept"
 
