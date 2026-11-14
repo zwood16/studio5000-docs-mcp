@@ -87,3 +87,40 @@
   expected: [help/clinset/motion-move-instructions/master-driven-axis-control--mdac-.html]
 - query: modulo remainder
   expected: [help/clinset/compute/modulo--mod-.html]
+# Practice queries added 2026-11-14 (plain language, no mnemonics) for synonym/title-boost tuning
+- query: make a rung execute only once on a false-to-true transition
+  expected:
+    - help/clinset/bit/One-shot--ons-1.html
+    - help/clinset/bit/One-shot-rising--osr-1.html
+- query: move a value from one tag to another
+  expected: [help/clinset/move-logical/move--move-.html]
+- query: add two numbers together in ladder logic
+  expected: [help/clinset/compute/add--add-.html]
+- query: check if a bit is on
+  expected:
+    - help/clinset/bit/Examine-if-closed--xic-1.html
+    - help/clinset/bit/Examine-if-closed--xic-1_2.html
+- query: latch an output so it stays on
+  expected: [help/clinset/bit/Output-latch--otl-1.html]
+- query: jump to a label in ladder logic
+  expected: [help/clinset/prog-control/jump-to-label--jmp--and-label--lbl-.html]
+- query: create a produced tag to share data between controllers
+  expected: [help/rs5000/datamon_taged/Create-a-produced-tag.html]
+- query: go online with the controller
+  expected: [help/rs5000/af_utilities/go-online-command.html]
+- query: download a project to the controller
+  expected:
+    - help/rs5000/comments_correlate/download-a-project.html
+    - help/rs5000/af_utilities/download-command.html
+- query: square root of a number
+  expected: [help/clinset/compute/square-root--sqrt-.html]
+- query: convert an integer to a string
+  expected: [help/clinset/ascii-convert/dint-to-string-dtos.html]
+- query: find where a tag is used in the project
+  expected: [help/rs5000/cross_ref/find-all-logic-references-to-a-tag.html]
+- query: create an event task triggered by an input
+  expected:
+    - help/rs5000/task_configuration/create-an-event-task.html
+    - help/rs5000/task_configuration/configure-an-event-task.html
+- query: difference between program-scoped and controller-scoped tags
+  expected: [help/rs5000/datamon_taged/Data-scope.html]

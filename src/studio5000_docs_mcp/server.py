@@ -7,6 +7,7 @@ import functools
 import json
 import sys
 import time
+from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -101,7 +102,8 @@ def _page_text(idx: Index, row, offset: int, max_chars: int, with_links: bool = 
 
 @_guard
 def search_help(query: str, version: str | None = None, section: str | None = None,
-                kind: str | None = None, limit: int = 10) -> str:
+                kind: Literal["instruction", "fault", "module", "dialog", "command", "concept"] | None = None,
+                limit: int = 10) -> str:
     """Search the Logix Designer help. Returns page_id, title, kind, breadcrumb and a short snippet per hit.
 
     Snippets are NOT page content: call get_page with a page_id to read the page.

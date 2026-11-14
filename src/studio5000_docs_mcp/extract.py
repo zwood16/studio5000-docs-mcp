@@ -378,6 +378,7 @@ def expand_identifiers(text: str) -> str:
 
 _STOP = set(
     "a an and are as at be by can do does for from how i in is it of on or that the this to was what when where which who why with".split()
+    + "between difference use using my so".split()
 )
 
 
@@ -398,3 +399,69 @@ def query_tokens(query: str) -> list[str]:
 def is_stop(tok: str) -> bool:
     """Common English words are dropped, except ALL-CAPS ones (FOR, AND, OR, NOT are mnemonics)."""
     return tok.lower() in _STOP and not (tok.isupper() and len(tok) > 1)
+
+
+# Query-side synonyms: general Logix/PLC vocabulary equivalences only (keyed by lower-case word, applied
+# to lower/mixed-case query words, never to ALL-CAPS mnemonics). Each entry must be an equivalence a
+# controls engineer would use in any context. Do NOT add entries whose purpose is to steer one specific
+# query to its expected page, and no query-specific phrases. Expansions only widen candidate recall;
+# they never count toward title coverage. Values are single FTS tokens or phrases (hyphenated words
+# are one token in this index, hence "one-shot").
+SYNONYMS: dict[str, tuple[str, ...]] = {
+    "create": ("define", "new"),
+    "make": ("create",),
+    "check": ("examine", "test"),
+    "once": ("one-shot",),
+    "used": ("reference", "cross-reference"),
+    "usage": ("reference", "cross-reference"),
+    "delete": ("remove",),
+    "remove": ("delete",),
+    "equal": ("compare",),
+    "equality": ("compare",),
+    "integer": ("dint", "int"),
+    "scope": ("scoped",),
+    "scoped": ("scope",),
+    "latch": ("set",),
+    "unlatch": ("reset",),
+    "online": ("go online",),
+    "offline": ("go offline",),
+    "variable": ("tag",),
+    "find": ("search",),
+    "search": ("find",),
+    "change": ("modify",),
+    "modify": ("change",),
+    "show": ("display",),
+    "display": ("show",),
+    "error": ("fault",),
+    "fault": ("error",),
+    "controller": ("processor",),
+    "delay": ("timer",),
+}
+
+_PLAIN_HYPHEN = re.compile(r"^[A-Za-z]+(?:-[A-Za-z]+)+$")
+
+
+def _q(t: str) -> str:
+    return '"%s"' % t.replace('"', "")
+
+
+def query_term(tok: str) -> tuple[str, str]:
+    """(original, expanded) FTS5 expressions for one query token from query_tokens().
+
+    original matches the token as typed; a plain-word hyphenated token ('program-scoped') also matches its
+    parts, mirroring expand_identifiers at index time. Catalog-style tokens ('1756-IF16') stay whole.
+    expanded adds synonyms (lower/mixed case only). Both are valid FTS5 and always parenthesised or quoted."""
+    if tok.isupper() and len(tok) > 1:
+        return _q(tok), _q(tok)
+    orig = _q(tok)
+    if _PLAIN_HYPHEN.match(tok):
+        parts = [p for p in tok.lower().split("-") if not is_stop(p)]
+        if len(parts) >= 2:
+            orig = "(%s OR (%s))" % (_q(tok), " AND ".join(_q(p) for p in parts))
+        elif len(parts) == 1:
+            orig = "(%s OR %s)" % (_q(tok), _q(parts[0]))
+    low = tok.lower()
+    syns = SYNONYMS.get(low) or SYNONYMS.get(low[:-1] if low.endswith("s") else low, ())
+    if not syns:
+        return orig, orig
+    return orig, "(%s OR %s)" % (orig, " OR ".join(_q(s) for s in syns))

@@ -256,3 +256,17 @@ def test_breadcrumb_inbound_and_section_fallbacks(synthetic_root, tmp_path):
     assert row("ait_1")["breadcrumb"] == ""
     assert stats["breadcrumb_methods"] == {"toc": 1, "relation": 1, "csv": 1, "inbound": 1, "section": 1}
     conn.close()
+
+
+def test_search_help_kind_schema_is_enum(server_tools):
+    from mcp import Client
+
+    async def run():
+        async with Client(server_tools.mcp) as c:
+            return await c.list_tools()
+
+    tools = asyncio.run(run()).tools
+    schema = next(t for t in tools if t.name == "search_help").input_schema
+    kind = schema["properties"]["kind"]
+    enum = kind.get("enum") or next(x["enum"] for x in kind["anyOf"] if "enum" in x)
+    assert enum == ["instruction", "fault", "module", "dialog", "command", "concept"]

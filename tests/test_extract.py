@@ -7,6 +7,8 @@ from studio5000_docs_mcp.extract import (
     expand_identifiers,
     is_stop,
     parse_html,
+    SYNONYMS,
+    query_term,
     query_tokens,
     resolve_ref,
 )
@@ -133,3 +135,43 @@ def test_is_stop():
     assert not is_stop("FOR") and not is_stop("AND")  # all-caps are mnemonics
     assert not is_stop("timer")
     assert is_stop("I")  # single capital letter is still a stop word
+
+
+def test_question_stopwords_dropped_but_caps_kept():
+    for w in ("how", "do", "does", "what", "which", "when", "where", "why", "I", "the", "a", "an", "to", "of",
+              "with", "between", "difference", "use", "using", "my", "Using"):
+        assert is_stop(w), w
+    for w in ("FOR", "AND", "OR", "TO", "USE"):
+        assert not is_stop(w), w
+
+
+def test_query_term_hyphen_split():
+    orig, exp = query_term("program-scoped")
+    assert orig == '("program-scoped" OR ("program" AND "scoped"))'
+    assert exp == orig  # hyphenated tokens get no synonym expansion
+    assert query_term("false-to-true")[0] == '("false-to-true" OR ("false" AND "true"))'  # stopword part dropped
+    assert query_term("1756-IF16") == ('"1756-IF16"', '"1756-IF16"')  # catalog id stays whole
+    assert query_term("Timer.DN") == ('"Timer.DN"', '"Timer.DN"')
+
+
+def test_query_term_synonyms():
+    orig, exp = query_term("create")
+    assert orig == '"create"'
+    assert exp == '("create" OR "define" OR "new")'
+    assert query_term("Create")[1] == '("Create" OR "define" OR "new")'  # FTS is case-insensitive
+    assert query_term("FOR") == ('"FOR"', '"FOR"')  # ALL-CAPS never expanded
+    assert query_term("timer") == ('"timer"', '"timer"')
+    assert all(v and all(isinstance(x, str) and '"' not in x for x in v) for v in SYNONYMS.values())
+    assert all(k == k.lower() for k in SYNONYMS)
+
+
+@pytest.mark.parametrize("q", [
+    '"', 'what "sets" TON', "(", ")))", "AND OR NOT NEAR", "NEAR(a b)", "a*", "^x", "col:val", "title:TON",
+    "", "   ", "-", "' OR 1=1 --", "\\", "{x}", "café 日本語 αβ", "a-b-c-", "create-new", "-x-y",
+])
+def test_query_term_hostile(q):
+    for t in query_tokens(q):
+        orig, exp = query_term(t)
+        for frag in (orig, exp):
+            assert frag.count('"') % 2 == 0
+            assert not any(c in frag.replace('"', "") for c in "*^:{}\\'")

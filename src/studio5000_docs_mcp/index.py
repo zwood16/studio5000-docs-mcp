@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -18,6 +19,7 @@ from .extract import (
     expand_identifiers,
     is_stop,
     markdown_to_text,
+    query_term,
     query_tokens,
 )
 from .sources.base import HelpSource, RawPage
@@ -29,6 +31,12 @@ TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
 SNIPPET_COL = 4
 MNEMONIC_BONUS = 6.0
+# Title coverage: tier 1/2 candidates (top RESCORE_POOL by bm25) are rescored as
+# bm25 - TITLE_COVERAGE_WEIGHT * (IDF-weighted fraction of the query's content words found in the page title).
+# Only multi-word queries are rescored; synonyms never count toward coverage.
+TITLE_COVERAGE_WEIGHT = 25.0
+RESCORE_POOL = 150
+TITLE_POOL = 30  # per query term, OR tier only
 
 SCHEMA = f"""
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
@@ -457,6 +465,7 @@ class Index:
             return []
         toks = [t for t in raw_tokens if not is_stop(t)] or raw_tokens
         quoted = ['"%s"' % t.replace('"', "") for t in toks]
+        terms = [query_term(t) for t in toks]  # (original, expanded-with-synonyms) FTS fragments
         mn_toks = [t for t in toks if t.isupper() and len(t) > 1 and not t.startswith(".")][:4]
         results: list[dict] = []
         seen: set[int] = set()
@@ -497,13 +506,55 @@ class Index:
                 s = snips.get(r["rid"])
                 add(s if s is not None else r, 0)
 
-        # tier 1: all terms, tier 2: any term
-        for r in self._fts(" ".join(quoted), kind, section, limit * 3, mn_toks):
-            add(r, 1)
-        if len(results) < limit and len(quoted) > 1:
-            for r in self._fts(" OR ".join(quoted), kind, section, limit * 3, mn_toks):
-                add(r, 2)
+        # tier 1: all terms (each may be satisfied by a synonym), tier 2: any term. Both are rescored by
+        # title coverage; when AND alone cannot fill the limit its few hits compete with the OR pool on
+        # the same adjusted score (a spurious full-AND match must not outrank a better-titled page).
+        expanded = [e for _, e in terms]
+        t1 = self._ranked(" AND ".join(expanded), terms, kind, section, mn_toks)
+        t1_ids = {r["rid"] for _, r in t1}
+        cands = list(t1)
+        if len(t1) < limit and len(quoted) > 1:
+            cands += [(sc, r) for sc, r in self._ranked(" OR ".join(expanded), terms, kind, section, mn_toks)
+                      if r["rid"] not in t1_ids]
+            cands.sort(key=lambda x: x[0])
+        for _, r in cands:
+            add(r, 1 if r["rid"] in t1_ids else 2)
         return results[:limit]
+
+    def _ranked(self, match: str, terms: list[tuple[str, str]], kind: str | None, section: str | None,
+                mn_toks: list[str]) -> list[tuple[float, sqlite3.Row]]:
+        rows = self._fts(match, kind, section, RESCORE_POOL, mn_toks)
+        if len(terms) < 2 or len(rows) < 2:
+            return [(r["score"], r) for r in rows]
+        if " OR " in match:  # OR tier: also pool each term's best title matches (rare words in short titles)
+            seen = {r["rid"] for r in rows}
+            for orig, _ in terms:
+                for r in self._fts(f"title : {orig}", kind, section, TITLE_POOL, mn_toks):
+                    if r["rid"] not in seen:
+                        seen.add(r["rid"])
+                        rows.append(r)
+        found = {r["rid"]: 0.0 for r in rows}
+        total = 0.0
+        with self.lock:
+            npages = self.conn.execute("SELECT count(*) FROM pages").fetchone()[0]
+            for orig, _ in terms:
+                try:
+                    hit = self.conn.execute("SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?",
+                                            [f"title : {orig}"]).fetchall()
+                except sqlite3.OperationalError:
+                    continue
+                if not hit:  # a term no title contains (e.g. an identifier): still part of the denominator
+                    total += math.log(1 + npages)
+                    continue
+                w = math.log(1 + npages / len(hit))  # rarer title words count more
+                total += w
+                for (rid,) in hit:
+                    if rid in found:
+                        found[rid] += w
+        if not total:
+            return [(r["score"], r) for r in rows]
+        return sorted(((r["score"] - TITLE_COVERAGE_WEIGHT * found[r["rid"]] / total, r) for r in rows),
+                      key=lambda x: x[0])
 
 
 # ---------------------------------------------------------------- manager
