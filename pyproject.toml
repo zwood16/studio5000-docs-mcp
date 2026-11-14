@@ -28,3 +28,4 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: needs a real Studio 5000 help install (set S5K_HELP_ROOT)"]

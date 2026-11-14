@@ -7,6 +7,7 @@ MCP server that indexes the Studio 5000 Logix Designer help (Oxygen WebHelp, v37
 ## Commands
 
 ```
+uv run pytest -m "not integration" -q              # offline unit tests only (synthetic fixtures, no help install)
 uv run pytest -s                                   # full suite; -s prints per-query eval results
 uv run pytest tests/test_index.py::test_name       # single test
 uv run pytest tests/test_eval.py -s                # retrieval eval only (hit@3 over tests/eval.yaml)
@@ -15,7 +16,7 @@ uv run python scripts/smoke_stdio.py               # start server over stdio, li
 uv run studio5000-docs-mcp                         # run the server (stdio)
 ```
 
-Tests and builds need a real help install. Set `S5K_HELP_ROOT` to the `Logix Designer/ENU` folder or one `rs5000` folder; otherwise tests skip. On the author's Linux box the help is on a read-only share at `/mnt/studio5000/Logix Designer/ENU` (v37 root: `.../v37/Bin/Help/ENU/rs5000`), which `tests/conftest.py` uses as a fallback. Never write into the help folder.
+Offline tests need nothing. Integration tests (marker `integration`: tests using the `manager`/`index`/`tools` fixtures, plus `tests/test_eval.py`) and real builds need a help install: set `S5K_HELP_ROOT` to the `Logix Designer/ENU` folder or one `rs5000` folder; when it is unset or not found the integration tests skip (there is no fallback path). On the author's Linux box the help is on a read-only share at `/mnt/studio5000/Logix Designer/ENU` (v37 root: `.../v37/Bin/Help/ENU/rs5000`). Never write into the help folder. Offline fixtures are made-up content (`tests/fixtures/`, `synthetic_root` in `tests/conftest.py`), never Rockwell text.
 
 No linter or formatter is configured.
 
@@ -36,7 +37,7 @@ Pipeline: `discovery` → `sources/oxygen` (+ `extract`) → `index.build_index`
 ## Non-obvious details
 
 - **Page IDs:** `page_id` is `DC.identifier` (e.g. `ait_455128`) only when unique; about 820 pages share identifiers (duplicate pages such as the six GSV/SSV pages) and use their help-root-relative path instead. Lookups accept either form.
-- **Cache invalidation:** One DB per version in the platformdirs user cache (or `S5K_DB_DIR`). The stored fingerprint combines HTML file count + max mtime, `SCHEMA_VERSION`, the root path and the `TOKENIZER` string. **Bump `SCHEMA_VERSION` whenever you change the schema or anything that changes indexed content**, or existing caches will be served stale.
+- **Cache invalidation:** One DB per version in the platformdirs user cache (or `S5K_DB_DIR`). The stored fingerprint combines the source fingerprint (HTML file count + max mtime, size/mtime of `context-help-map.xml`, `rs5000.csv`, `index.xml`, and nav-links JSON count + max mtime), `SCHEMA_VERSION`, the root path and the `TOKENIZER` string. **Bump `SCHEMA_VERSION` whenever you change the schema or anything that changes indexed content**, or existing caches will be served stale.
 - **Tokenizer and query handling must stay symmetric:** The FTS tokenizer is `porter unicode61 ... tokenchars '_.-'` so identifiers like `.DN`, `1756-IF16` and `Axis_CIP_Drive` stay whole. Because that also glues sentence periods onto words, `clean_punct` strips trailing `.-_` and `expand_identifiers` adds the parts of dotted/hyphenated identifiers to an `extra` column. Index-time and query-time processing must match. Raw queries are quoted per token and must never raise FTS syntax errors (there is a test with hostile queries).
 - **Ranking:** search is tiered: tier 0 is an exact title or lone-mnemonic match, tier 1 is all terms (AND), tier 2 is any term (OR) to fill the limit. bm25 column weights are in `BM25_WEIGHTS`; ALL-CAPS query tokens matching a page mnemonic get a flat `MNEMONIC_BONUS`. After changing tokenizer, weights or tiers, rerun the eval and report the hit@3 score.
 - **Eval expectations:** `tests/eval.yaml` expected paths must be verified against the actual help content, not guessed. Keep queries used for tuning distinct from held-out ones when adding more.

@@ -83,7 +83,24 @@ class OxygenSource:
 
     def fingerprint(self) -> str:
         self._scan()
-        return f"oxygen:{len(self._files)}:{self._max_mtime}"
+        parts = [f"oxygen:{len(self._files)}:{self._max_mtime}"]
+        for name in ("context-help-map.xml", "rs5000.csv", "index.xml"):
+            try:
+                stt = os.stat(self.root / name)
+                parts.append(f"{stt.st_size}.{stt.st_mtime_ns}")
+            except OSError:
+                parts.append("missing")
+        n, mx = 0, 0
+        try:
+            with os.scandir(self.root / NAVLINKS_DIR) as it:
+                for e in it:
+                    if e.is_file():
+                        n += 1
+                        mx = max(mx, e.stat().st_mtime_ns)
+        except OSError:
+            pass
+        parts.append(f"nav{n}.{mx}")
+        return ":".join(parts)
 
     def page_count(self) -> int:
         self._scan()

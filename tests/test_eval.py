@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.integration
 
 EVAL = yaml.safe_load((Path(__file__).parent / "eval.yaml").read_text())
 THRESHOLD = 0.7

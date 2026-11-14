@@ -23,7 +23,7 @@ from .extract import (
 from .sources.base import HelpSource, RawPage
 from .sources.oxygen import OxygenSource
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 # column order: title, mnemonic, keywords, breadcrumb, body, extra
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
@@ -95,14 +95,13 @@ def parse_version_arg(v: str | None) -> str | None:
 
 # ---------------------------------------------------------------- build
 
-def build_index(source: HelpSource, db_path: Path, progress=None) -> dict:
+def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint: str) -> dict:
     """Build the DB into a temp file next to db_path, then atomically rename."""
     t0 = time.time()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = db_path.with_name(db_path.name + f".tmp-{os.getpid()}")
     if tmp.exists():
         tmp.unlink()
-    fp = source.fingerprint()
 
     pages: list[RawPage] = []
     for p in source.iter_pages():
@@ -237,7 +236,7 @@ def build_index(source: HelpSource, db_path: Path, progress=None) -> dict:
         "build_seconds": round(elapsed, 2),
         "parse_seconds": round(t_parse, 2),
     }
-    meta = {"fingerprint": fp, "schema": str(SCHEMA_VERSION), "version": version,
+    meta = {"fingerprint": fingerprint, "schema": str(SCHEMA_VERSION), "version": version,
             "root": str(source.root), "built_at": str(int(time.time())), "stats": json.dumps(stats)}
     conn.executemany("INSERT INTO meta VALUES (?,?)", list(meta.items()))
     conn.commit()
@@ -343,8 +342,9 @@ class Index:
             return out
 
     def toc_node_title(self, node_id: str) -> str | None:
-        r = self.conn.execute("SELECT title FROM toc WHERE node_id=?", (node_id,)).fetchone()
-        return r[0] if r else None
+        with self.lock:
+            r = self.conn.execute("SELECT title FROM toc WHERE node_id=?", (node_id,)).fetchone()
+            return r[0] if r else None
 
     def titles_for(self, ids: list[str]) -> dict[str, tuple[str, str]]:
         if not ids:
@@ -461,6 +461,8 @@ class IndexNotReady(Exception):
 
 
 class IndexManager:
+    RETRY_AFTER = 30.0  # seconds after a failed build before get() tries again
+
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.versions: dict[str, VersionInfo] = discover(cfg)
@@ -487,9 +489,12 @@ class IndexManager:
         try:
             self.build(version)
         except Exception as e:  # recorded in state; tools report it
-            st = self._states[version]
-            st.phase, st.error, st.finished = "error", f"{type(e).__name__}: {e}", time.time()
-            self._ready[version].set()
+            self._record_failure(version, e)
+
+    def _record_failure(self, version: str, e: Exception) -> None:
+        st = self._states[version]
+        st.phase, st.error, st.finished = "error", f"{type(e).__name__}: {e}", time.time()
+        self._ready[version].set()
 
     def build(self, version: str, force: bool | None = None) -> Index:
         """Open the cached index, rebuilding when stale. Thread-safe and idempotent."""
@@ -520,12 +525,9 @@ class IndexManager:
                 except sqlite3.DatabaseError:
                     pass
             if not fresh:
-                # store the combined fingerprint
-                orig = source.fingerprint
-                source.fingerprint = lambda: fp  # type: ignore[method-assign]
                 st.phase = "parsing"
-                stats = build_index(source, dbp, progress=lambda ph, d, t: setattr(st, "phase", ph))
-                source.fingerprint = orig  # type: ignore[method-assign]
+                stats = build_index(source, dbp, progress=lambda ph, d, t: setattr(st, "phase", ph),
+                                    fingerprint=fp)
                 idx = Index(dbp)
                 st.rebuilt, st.stats = True, stats
             else:
@@ -558,6 +560,17 @@ class IndexManager:
                     "Retry in a few seconds.")
             st = self._states[v]
             if st.error:
-                raise RuntimeError(f"Index build for {v} failed: {st.error}")
+                since = time.time() - st.finished
+                if since < self.RETRY_AFTER:
+                    raise RuntimeError(
+                        f"Index build for {v} failed: {st.error} (will retry after "
+                        f"{max(1, round(self.RETRY_AFTER - since))}s)")
+                try:
+                    return self.build(v)
+                except Exception as e:
+                    self._record_failure(v, e)
+                    raise RuntimeError(f"Index build for {v} failed again on retry: {type(e).__name__}: {e}") from e
+            if v not in self._indexes:  # another caller is retrying the build
+                raise IndexNotReady(f"The index for {v} is rebuilding ({st.phase}). Retry in a few seconds.")
             return self._indexes[v]
         return self.build(v)

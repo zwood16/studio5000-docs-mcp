@@ -34,7 +34,7 @@ The first start builds the index in the background (a few seconds to about a min
 
 Windows: when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000\Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and the same path under `%ProgramFiles%`. **This default path is unverified; it has not been checked on a real Windows install.** Set `S5K_HELP_ROOT` if it does not match.
 
-The index is one SQLite file per version. It is rebuilt when the help folder's HTML file count or newest modification time changes, or when the schema version changes. The help folder is only ever read.
+The index is one SQLite file per version. It is rebuilt when the help folder's HTML files, TOC files or metadata files (`context-help-map.xml`, `rs5000.csv`, `index.xml`) change, or when the schema version changes. The help folder is only ever read.
 
 ## Tools
 
@@ -43,7 +43,8 @@ The index is one SQLite file per version. It is rebuilt when the help folder's H
 ## Development
 
 ```
-uv run pytest -s          # needs the help folder (set S5K_HELP_ROOT); skipped otherwise
+uv run pytest -m "not integration" -q   # offline unit tests, no help install needed
+uv run pytest -s          # full suite; integration tests need S5K_HELP_ROOT and are skipped otherwise
 uv run python scripts/smoke_stdio.py   # start the server over stdio and call each tool
 ```
 

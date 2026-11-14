@@ -9,11 +9,13 @@ from studio5000_docs_mcp.index import extract_mnemonics
 TON = "help/clinset/timer-counter/timer-on-delay--ton-.html"
 
 
+@pytest.mark.integration
 def test_page_count(index):
     n = index.stats()["pages"]
     assert abs(n - 5493) / 5493 <= 0.02, n
 
 
+@pytest.mark.integration
 def test_titles_and_bodies_nonempty(index):
     c = index.conn
     assert c.execute("SELECT count(*) FROM pages WHERE title=''").fetchone()[0] == 0
@@ -23,6 +25,7 @@ def test_titles_and_bodies_nonempty(index):
     assert only_title < 0.01 * index.stats()["pages"], only_title
 
 
+@pytest.mark.integration
 def test_ton_markdown_has_timer_table(index):
     md = index.resolve_page(TON)["markdown"]
     assert re.search(r"^\| --- ", md, re.M)
@@ -31,6 +34,7 @@ def test_ton_markdown_has_timer_table(index):
     assert "| 4 | 34 |" in md or "| .PRE < 0 | 4 | 34 |" in md
 
 
+@pytest.mark.integration
 def test_resolve_by_id_and_path(index):
     by_path = index.resolve_page(TON)
     assert by_path["id"] == "ait_455128"
@@ -38,17 +42,20 @@ def test_resolve_by_id_and_path(index):
     assert index.resolve_page("/" + TON)["id"] == "ait_455128"
 
 
+@pytest.mark.integration
 def test_help_id(index, tools):
     rows = index.by_help_id("131173")
     assert rows
     assert "131173" in tools.get_page_by_help_id("131173") or "page_id" in tools.get_page_by_help_id("131173")
 
 
+@pytest.mark.integration
 def test_breadcrumbs(index):
     s = index.stats()
     assert s["with_breadcrumb"] / s["pages"] > 0.95
 
 
+@pytest.mark.integration
 def test_instruction_lookup(index, tools):
     assert index.instruction("TON")[0]["path"] == TON
     ssv = index.instruction("SSV")
@@ -57,6 +64,7 @@ def test_instruction_lookup(index, tools):
     assert "Set System Value" in tools.get_instruction("SSV")
 
 
+@pytest.mark.integration
 def test_links_rewritten(index):
     md = index.resolve_page(TON)["markdown"]
     targets = re.findall(r"\]\(page:([^)]+)\)", md)
@@ -71,6 +79,7 @@ def test_mnemonic_extraction():
     assert extract_mnemonics("Options command") == []
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("q", [
     ".DN", "1756-IF16", 'what "sets" TON .DN', "AND OR NOT", "NEAR(", '"', "a*", "-", "(", ")))", "col:val", "^x", "", "   ",
     "' OR 1=1 --", "title:TON", "TON*", "\\", "foo AND", "NOT", "{x}", "12/34",
@@ -80,6 +89,7 @@ def test_search_never_errors(index, tools, q):
     assert isinstance(tools.search_help(q), str)
 
 
+@pytest.mark.integration
 def test_dot_dn_and_catalog_numbers(index):
     assert index.search(".DN")
     res = index.search("1756-IF16")
@@ -93,6 +103,7 @@ def test_query_tokens_preserve_identifiers():
     assert ".dn" in expand_identifiers("Timer.DN") and "dn" in expand_identifiers("Timer.DN")
 
 
+@pytest.mark.integration
 def test_get_page_pagination(index, tools):
     big = index.conn.execute("SELECT id FROM pages ORDER BY chars DESC LIMIT 1").fetchone()[0]
     out = tools.get_page(big, max_chars=1000)
@@ -102,6 +113,7 @@ def test_get_page_pagination(index, tools):
     assert "offset=" in out2 or "End of page" in out2
 
 
+@pytest.mark.integration
 def test_other_tools(tools):
     assert "v37" in tools.list_versions()
     assert "pages:" in tools.get_help_statistics()
