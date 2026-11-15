@@ -32,7 +32,8 @@ BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
 SNIPPET_COL = 4
 MNEMONIC_BONUS = 6.0
 # Title coverage: tier 1/2 candidates (top RESCORE_POOL by bm25) are rescored as
-# bm25 - TITLE_COVERAGE_WEIGHT * (IDF-weighted fraction of the query's content words found in the page title).
+# bm25 - TITLE_COVERAGE_WEIGHT * (IDF-weighted fraction of the query's content words
+# found in the page title).
 # Only multi-word queries are rescored; synonyms never count toward coverage.
 TITLE_COVERAGE_WEIGHT = 25.0
 RESCORE_POOL = 150
@@ -51,7 +52,7 @@ CREATE INDEX toc_parent ON toc(parent_id, ord);
 CREATE TABLE help_ids(help_id TEXT NOT NULL, page_id TEXT NOT NULL, PRIMARY KEY(help_id, page_id));
 CREATE VIRTUAL TABLE pages_fts USING fts5(title, mnemonic, keywords, breadcrumb, body, extra,
   tokenize="{TOKENIZER}");
-"""
+"""  # noqa: E501  (SQL text kept byte-identical)
 
 _MN_RE = re.compile(r"\(([A-Z0-9_ ]+)\)")
 
@@ -60,8 +61,10 @@ _MN_DASH_RE = re.compile(r"[-\u2013]\s?([A-Z][A-Z0-9_]+)$")
 
 
 def extract_mnemonics(title: str, path: str = "") -> list[str]:
-    """All parenthesised all-caps mnemonics in a title, e.g. 'Get ... (GSV) and Set ... (SSV)'.
-    Instruction-set pages titled like 'DINT to String-DTOS' use a trailing '-MNEMONIC' instead."""
+    """All parenthesised all-caps mnemonics in a title.
+
+    E.g. 'Get ... (GSV) and Set ... (SSV)'. Instruction-set pages titled like
+    'DINT to String-DTOS' use a trailing '-MNEMONIC' instead."""
     out = []
     for m in _MN_RE.findall(title):
         m = m.strip()
@@ -74,7 +77,9 @@ def extract_mnemonics(title: str, path: str = "") -> list[str]:
     return out
 
 
-SECTION_LABELS = {  # last-resort breadcrumb label per section; titles match the top-level TOC where one exists
+# last-resort breadcrumb label per section; titles match the top-level TOC where one
+# exists
+SECTION_LABELS = {
     "common-content": "Common content",
     "help/clinset": "Instruction Set",
     "help/rs5000": "Studio 5000 Logix Designer",
@@ -93,7 +98,9 @@ def section_of(path: str) -> str:
 _FAULT_START_RE = re.compile(r"^(failed to|unable to|cannot|can't|could not|error\b)")
 _FAULT_WORD_RE = re.compile(r"\b(faults?|errors?|unhandled exception)\b")
 _DIALOG_RE = re.compile(r"\b(dialog box|dialog|wizard|tab)\b|\b(page|window|pane)$")
-_PROPS_RE = re.compile(r"\bProperties( -|$)")  # case-sensitive: "Module Properties - General", not "Edit routine properties"
+_PROPS_RE = re.compile(
+    r"\bProperties( -|$)"
+)  # case-sensitive: "Module Properties - General", not "Edit routine properties"
 _CATALOG_RE = re.compile(r"\b\d{4}[A-Z]?-[A-Z0-9]+")
 
 
@@ -101,10 +108,11 @@ def classify(path: str, title: str, mnemonic: str) -> str:
     """Page kind from path and title. Order matters: the first matching rule wins.
 
     instruction: help/clinset page with a mnemonic (flow-chart image pages excluded)
-    fault:       module-errors folder, error-message titles ("Failed to ...") or fault/error words
-                 (a dialog/tab page about faults stays a dialog)
+    fault:       module-errors folder, error-message titles ("Failed to ...") or
+                 fault/error words (a dialog/tab page about faults stays a dialog)
     command:     "... command" pages
-    dialog:      dialog box, wizard, tab, page, window or pane pages; a title-case "Properties" heading
+    dialog:      dialog box, wizard, tab, page, window or pane pages; a title-case
+                 "Properties" heading
     module:      anything under help/modules, or a page naming a catalog-numbered module
     concept:     the rest (overviews, procedures, attribute references)
     """
@@ -114,7 +122,11 @@ def classify(path: str, title: str, mnemonic: str) -> str:
         return "instruction"
     if "module-errors" in pl or _FAULT_START_RE.search(t):
         return "fault"
-    if t.endswith(" command") or t.endswith(" commands") or pl.endswith("-command.html"):
+    if (
+        t.endswith(" command")
+        or t.endswith(" commands")
+        or pl.endswith("-command.html")
+    ):
         return "command"
     if _DIALOG_RE.search(t) or _PROPS_RE.search(title):
         return "dialog"
@@ -131,7 +143,10 @@ def parse_version_arg(v: str | None) -> str | None:
 
 # ---------------------------------------------------------------- build
 
-def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint: str) -> dict:
+
+def build_index(
+    source: HelpSource, db_path: Path, progress=None, *, fingerprint: str
+) -> dict:
     """Build the DB into a temp file next to db_path, then atomically rename."""
     t0 = time.time()
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,7 +166,9 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
             id_counts[p.identifier] = id_counts.get(p.identifier, 0) + 1
     path_to_id: dict[str, str] = {}
     for p in pages:
-        path_to_id[p.path] = p.identifier if p.identifier and id_counts[p.identifier] == 1 else p.path
+        path_to_id[p.path] = (
+            p.identifier if p.identifier and id_counts[p.identifier] == 1 else p.path
+        )
     by_path = {p.path: p for p in pages}
 
     # ---- toc
@@ -177,7 +194,9 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
     memo: dict[str, list[tuple[str, str | None]]] = {}
     method: dict[str, str] = {}  # path -> how its breadcrumb was derived
 
-    def crumbs_for(path: str, stack: tuple[str, ...] = ()) -> list[tuple[str, str | None]]:
+    def crumbs_for(
+        path: str, stack: tuple[str, ...] = ()
+    ) -> list[tuple[str, str | None]]:
         if path in memo:
             return memo[path]
         res: list[tuple[str, str | None]] = []
@@ -203,21 +222,30 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
     primary = {p.path: crumbs_for(p.path) for p in pages}  # toc / relation / csv only
     inbound: dict[str, list[str]] = {}
     for p in pages:
-        for l in p.links:
-            if l in by_path and l != p.path:
-                inbound.setdefault(l, []).append(p.path)
+        for link in p.links:
+            if link in by_path and link != p.path:
+                inbound.setdefault(link, []).append(p.path)
     final: dict[str, list[tuple[str, str | None]]] = {}
     for p in sorted(pages, key=lambda x: x.path):
         res = primary[p.path]
-        if not res and p.path not in href_to_node:  # TOC pages with no ancestors are roots; leave them empty
+        if (
+            not res and p.path not in href_to_node
+        ):  # TOC pages with no ancestors are roots; leave them empty
             sec = section_of(p.path)
-            cands = sorted({l for l in inbound.get(p.path, []) if primary[l]})
+            cands = sorted({c for c in inbound.get(p.path, []) if primary[c]})
             if cands:
                 sec_counts: dict[str, int] = {}
-                for l in cands:
-                    sec_counts[section_of(l)] = sec_counts.get(section_of(l), 0) + 1
-                best = min(cands, key=lambda l: (section_of(l) != sec, -sec_counts[section_of(l)],
-                                                 len(primary[l]), l))
+                for c in cands:
+                    sec_counts[section_of(c)] = sec_counts.get(section_of(c), 0) + 1
+                best = min(
+                    cands,
+                    key=lambda c: (
+                        section_of(c) != sec,
+                        -sec_counts[section_of(c)],
+                        len(primary[c]),
+                        c,
+                    ),
+                )
                 res = primary[best] + [(by_path[best].title, path_to_id[best])]
                 method[p.path] = "inbound"
             else:
@@ -260,16 +288,32 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
             n_with_crumbs += 1
         breadcrumb = " > ".join(t for t, _ in crumbs)
         md = rewrite(p.markdown)
-        out_ids = [path_to_id[l] for l in p.links if l in path_to_id]
+        out_ids = [path_to_id[x] for x in p.links if x in path_to_id]
         parent_id = path_to_id.get(p.relation) if p.relation else None
         kw = " ; ".join(keywords.get(p.path, []))
         body = markdown_to_text(md)
         title_f = clean_punct(p.title)
         conn.execute(
             "INSERT INTO pages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (rid, pid, version, p.path, p.title, mnemonic, kind, section_of(p.path), breadcrumb,
-             json.dumps(crumbs), p.description, md, len(md), json.dumps(out_ids), parent_id,
-             href_to_node.get(p.path), len(crumbs)),
+            (
+                rid,
+                pid,
+                version,
+                p.path,
+                p.title,
+                mnemonic,
+                kind,
+                section_of(p.path),
+                breadcrumb,
+                json.dumps(crumbs),
+                p.description,
+                md,
+                len(md),
+                json.dumps(out_ids),
+                parent_id,
+                href_to_node.get(p.path),
+                len(crumbs),
+            ),
         )
         for m in mns:
             conn.execute("INSERT INTO mnemonics VALUES (?,?)", (m, pid))
@@ -277,17 +321,37 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
         bc_f = clean_punct(breadcrumb)
         kw_f = clean_punct(kw)
         title_col = f"{title_f} {expand_identifiers(title_f)}".strip()
-        extra = " ".join(x for x in (expand_identifiers(body), expand_identifiers(kw_f), expand_identifiers(bc_f)) if x)
+        extra = " ".join(
+            x
+            for x in (
+                expand_identifiers(body),
+                expand_identifiers(kw_f),
+                expand_identifiers(bc_f),
+            )
+            if x
+        )
         conn.execute(
-            "INSERT INTO pages_fts(rowid,title,mnemonic,keywords,breadcrumb,body,extra) VALUES (?,?,?,?,?,?,?)",
-            (rid, title_col, mnemonic, f"{kw_f} {expand_identifiers(kw_f)}".strip(), bc_f, body, extra),
+            "INSERT INTO pages_fts(rowid,title,mnemonic,keywords,breadcrumb,body,extra)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (
+                rid,
+                title_col,
+                mnemonic,
+                f"{kw_f} {expand_identifiers(kw_f)}".strip(),
+                bc_f,
+                body,
+                extra,
+            ),
         )
         if progress and rid % 500 == 0:
             progress("indexing", rid, len(pages))
 
     for n in nodes:
         pg = path_to_id.get(n.href) if n.href else None
-        conn.execute("INSERT INTO toc VALUES (?,?,?,?,?)", (n.node_id, n.parent_id, pg, n.title, n.ord))
+        conn.execute(
+            "INSERT INTO toc VALUES (?,?,?,?,?)",
+            (n.node_id, n.parent_id, pg, n.title, n.ord),
+        )
     seen_h = set()
     for hid, hp in help_ids:
         pg = path_to_id.get(hp)
@@ -300,16 +364,24 @@ def build_index(source: HelpSource, db_path: Path, progress=None, *, fingerprint
     stats = {
         "pages": len(pages),
         "pages_with_breadcrumb": n_with_crumbs,
-        "breadcrumb_methods": {m: sum(1 for v in method.values() if v == m)
-                               for m in ("toc", "relation", "csv", "inbound", "section")},
+        "breadcrumb_methods": {
+            m: sum(1 for v in method.values() if v == m)
+            for m in ("toc", "relation", "csv", "inbound", "section")
+        },
         "toc_nodes": len(nodes),
         "help_ids": len(seen_h),
         "mnemonic_entries": n_mn,
         "build_seconds": round(elapsed, 2),
         "parse_seconds": round(t_parse, 2),
     }
-    meta = {"fingerprint": fingerprint, "schema": str(SCHEMA_VERSION), "version": version,
-            "root": str(source.root), "built_at": str(int(time.time())), "stats": json.dumps(stats)}
+    meta = {
+        "fingerprint": fingerprint,
+        "schema": str(SCHEMA_VERSION),
+        "version": version,
+        "root": str(source.root),
+        "built_at": str(int(time.time())),
+        "stats": json.dumps(stats),
+    }
     conn.executemany("INSERT INTO meta VALUES (?,?)", list(meta.items()))
     conn.commit()
     conn.close()
@@ -323,10 +395,13 @@ def db_fingerprint(source: HelpSource) -> str:
 
 # ---------------------------------------------------------------- query
 
+
 class Index:
     def __init__(self, db_path: Path):
         self.db_path = db_path
-        self.conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, check_same_thread=False)
+        self.conn = sqlite3.connect(
+            f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
+        )
         self.conn.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         self.version = self._meta("version")
@@ -341,15 +416,30 @@ class Index:
     def stats(self) -> dict:
         with self.lock:
             c = self.conn
-            kinds = {r[0]: r[1] for r in c.execute("SELECT kind, count(*) FROM pages GROUP BY kind")}
-            sections = {r[0]: r[1] for r in c.execute("SELECT section, count(*) FROM pages GROUP BY section ORDER BY 2 DESC")}
+            kinds = {
+                r[0]: r[1]
+                for r in c.execute("SELECT kind, count(*) FROM pages GROUP BY kind")
+            }
+            sections = {
+                r[0]: r[1]
+                for r in c.execute(
+                    "SELECT section, count(*) FROM pages "
+                    "GROUP BY section ORDER BY 2 DESC"
+                )
+            }
             return {
                 "version": self.version,
                 "pages": c.execute("SELECT count(*) FROM pages").fetchone()[0],
-                "with_breadcrumb": c.execute("SELECT count(*) FROM pages WHERE breadcrumb != ''").fetchone()[0],
+                "with_breadcrumb": c.execute(
+                    "SELECT count(*) FROM pages WHERE breadcrumb != ''"
+                ).fetchone()[0],
                 "toc_nodes": c.execute("SELECT count(*) FROM toc").fetchone()[0],
-                "help_ids": c.execute("SELECT count(DISTINCT help_id) FROM help_ids").fetchone()[0],
-                "mnemonics": c.execute("SELECT count(DISTINCT mnemonic) FROM mnemonics").fetchone()[0],
+                "help_ids": c.execute(
+                    "SELECT count(DISTINCT help_id) FROM help_ids"
+                ).fetchone()[0],
+                "mnemonics": c.execute(
+                    "SELECT count(DISTINCT mnemonic) FROM mnemonics"
+                ).fetchone()[0],
                 "kinds": kinds,
                 "sections": sections,
                 "root": self._meta("root"),
@@ -380,7 +470,7 @@ class Index:
         with self.lock:
             return self.conn.execute(
                 """SELECT p.* FROM mnemonics m JOIN pages p ON p.id=m.page_id WHERE m.mnemonic=?
-                   ORDER BY (p.path LIKE 'help/clinset/%') DESC, (p.kind='instruction') DESC, p.depth, p.path""",
+                   ORDER BY (p.path LIKE 'help/clinset/%') DESC, (p.kind='instruction') DESC, p.depth, p.path""",  # noqa: E501
                 (m,),
             ).fetchall()
 
@@ -388,34 +478,54 @@ class Index:
         with self.lock:
             rows = self.conn.execute(
                 """SELECT p.* FROM help_ids h JOIN pages p ON p.id=h.page_id WHERE h.help_id=?
-                   ORDER BY p.path""", (help_id.strip(),)).fetchall()
+                   ORDER BY p.path""",  # noqa: E501
+                (help_id.strip(),),
+            ).fetchall()
             if not rows:
                 rows = self.conn.execute(
                     """SELECT p.* FROM help_ids h JOIN pages p ON p.id=h.page_id WHERE lower(h.help_id)=lower(?)
-                       ORDER BY p.path""", (help_id.strip(),)).fetchall()
+                       ORDER BY p.path""",  # noqa: E501
+                    (help_id.strip(),),
+                ).fetchall()
             return rows
 
     def toc_children(self, node_id: str | None) -> list[dict]:
         with self.lock:
             if node_id:
-                if not self.conn.execute("SELECT 1 FROM toc WHERE node_id=?", (node_id,)).fetchone():
+                if not self.conn.execute(
+                    "SELECT 1 FROM toc WHERE node_id=?", (node_id,)
+                ).fetchone():
                     pg = self.resolve_page(node_id)
                     if pg is None or not pg["toc_node"]:
                         raise KeyError(node_id)
                     node_id = pg["toc_node"]
                 rows = self.conn.execute(
-                    "SELECT * FROM toc WHERE parent_id=? ORDER BY ord", (node_id,)).fetchall()
+                    "SELECT * FROM toc WHERE parent_id=? ORDER BY ord", (node_id,)
+                ).fetchall()
             else:
-                rows = self.conn.execute("SELECT * FROM toc WHERE parent_id IS NULL ORDER BY ord").fetchall()
+                rows = self.conn.execute(
+                    "SELECT * FROM toc WHERE parent_id IS NULL ORDER BY ord"
+                ).fetchall()
             out = []
             for r in rows:
-                n = self.conn.execute("SELECT count(*) FROM toc WHERE parent_id=?", (r["node_id"],)).fetchone()[0]
-                out.append({"node_id": r["node_id"], "title": r["title"], "page_id": r["page_id"], "children": n})
+                n = self.conn.execute(
+                    "SELECT count(*) FROM toc WHERE parent_id=?", (r["node_id"],)
+                ).fetchone()[0]
+                out.append(
+                    {
+                        "node_id": r["node_id"],
+                        "title": r["title"],
+                        "page_id": r["page_id"],
+                        "children": n,
+                    }
+                )
             return out
 
     def toc_node_title(self, node_id: str) -> str | None:
         with self.lock:
-            r = self.conn.execute("SELECT title FROM toc WHERE node_id=?", (node_id,)).fetchone()
+            r = self.conn.execute(
+                "SELECT title FROM toc WHERE node_id=?", (node_id,)
+            ).fetchone()
             return r[0] if r else None
 
     def titles_for(self, ids: list[str]) -> dict[str, tuple[str, str]]:
@@ -423,18 +533,31 @@ class Index:
             return {}
         with self.lock:
             q = ",".join("?" * len(ids))
-            return {r["id"]: (r["title"], r["path"]) for r in
-                    self.conn.execute(f"SELECT id,title,path FROM pages WHERE id IN ({q})", ids)}
+            return {
+                r["id"]: (r["title"], r["path"])
+                for r in self.conn.execute(
+                    f"SELECT id,title,path FROM pages WHERE id IN ({q})", ids
+                )
+            }
 
     # ---- search
-    def _fts(self, match: str, kind: str | None, section: str | None, limit: int,
-             mnemonics: list[str] | None = None) -> list[sqlite3.Row]:
-        # bm25 IDF is table-wide, so a mnemonic like FOR (a common word) barely scores in the mnemonic
-        # column; ALL-CAPS query tokens that equal a page mnemonic therefore get a flat bonus.
+    def _fts(
+        self,
+        match: str,
+        kind: str | None,
+        section: str | None,
+        limit: int,
+        mnemonics: list[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        # bm25 IDF is table-wide, so a mnemonic like FOR (a common word) barely scores
+        # in the mnemonic column; ALL-CAPS query tokens that equal a page mnemonic
+        # therefore get a flat bonus.
         bonus_sql = ""
         bonus_args: list = []
         for m in mnemonics or []:
-            bonus_sql += " - (CASE WHEN ' ' || p.mnemonic || ' ' LIKE ? THEN ? ELSE 0 END)"
+            bonus_sql += (
+                " - (CASE WHEN ' ' || p.mnemonic || ' ' LIKE ? THEN ? ELSE 0 END)"
+            )
             bonus_args += [f"% {m} %", MNEMONIC_BONUS]
         where = ["pages_fts MATCH ?"]
         args: list = [match]
@@ -450,7 +573,7 @@ class Index:
                          bm25(pages_fts, {w}){bonus_sql} AS score,
                          snippet(pages_fts, {SNIPPET_COL}, '**', '**', ' ... ', 32) AS snip
                   FROM pages_fts JOIN pages p ON p.rid = pages_fts.rowid
-                  WHERE {' AND '.join(where)} ORDER BY score LIMIT ?"""
+                  WHERE {" AND ".join(where)} ORDER BY score LIMIT ?"""  # noqa: E501
         args.append(limit)
         with self.lock:
             try:
@@ -458,15 +581,25 @@ class Index:
             except sqlite3.OperationalError:
                 return []
 
-    def search(self, query: str, kind: str | None = None, section: str | None = None, limit: int = 10) -> list[dict]:
+    def search(
+        self,
+        query: str,
+        kind: str | None = None,
+        section: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
         limit = max(1, min(int(limit), 50))
         raw_tokens = query_tokens(query)
         if not raw_tokens:
             return []
         toks = [t for t in raw_tokens if not is_stop(t)] or raw_tokens
-        quoted = ['"%s"' % t.replace('"', "") for t in toks]
-        terms = [query_term(t) for t in toks]  # (original, expanded-with-synonyms) FTS fragments
-        mn_toks = [t for t in toks if t.isupper() and len(t) > 1 and not t.startswith(".")][:4]
+        quoted = [f'"{t.replace('"', "")}"' for t in toks]
+        terms = [
+            query_term(t) for t in toks
+        ]  # (original, expanded-with-synonyms) FTS fragments
+        mn_toks = [
+            t for t in toks if t.isupper() and len(t) > 1 and not t.startswith(".")
+        ][:4]
         results: list[dict] = []
         seen: set[int] = set()
 
@@ -474,21 +607,34 @@ class Index:
             if row["rid"] in seen:
                 return
             seen.add(row["rid"])
-            results.append({
-                "id": row["id"], "path": row["path"], "title": row["title"], "mnemonic": row["mnemonic"],
-                "kind": row["kind"], "section": row["section"], "breadcrumb": row["breadcrumb"],
-                "snippet": (row["snip"] if "snip" in row.keys() and row["snip"] else row["description"]) or "",
-                "tier": tier,
-            })
+            results.append(
+                {
+                    "id": row["id"],
+                    "path": row["path"],
+                    "title": row["title"],
+                    "mnemonic": row["mnemonic"],
+                    "kind": row["kind"],
+                    "section": row["section"],
+                    "breadcrumb": row["breadcrumb"],
+                    "snippet": (
+                        row["snip"]
+                        if "snip" in row.keys() and row["snip"]  # noqa: SIM118
+                        else row["description"]
+                    )
+                    or "",
+                    "tier": tier,
+                }
+            )
 
         # tier 0: exact title / mnemonic matches
         tier0: list[sqlite3.Row] = []
         single = len(toks) == 1
         with self.lock:
-            qnorm = " ".join(t.lower() for t in raw_tokens)
             tier0 += self.conn.execute(
-                "SELECT * FROM pages WHERE lower(title)=? ORDER BY (path LIKE 'help/clinset/%') DESC, path LIMIT 5",
-                (query.strip().lower(),)).fetchall()
+                "SELECT * FROM pages WHERE lower(title)=? "
+                "ORDER BY (path LIKE 'help/clinset/%') DESC, path LIMIT 5",
+                (query.strip().lower(),),
+            ).fetchall()
             if single:  # a lone mnemonic: go straight to its instruction page(s)
                 tier0 += self.instruction(toks[0])[:5]
         mrows = []
@@ -497,39 +643,60 @@ class Index:
                 continue
             if section:
                 s = section.strip().strip("/")
-                if not (r["section"] == s or r["section"] == f"help/{s}" or r["section"].startswith(s + "/")):
+                if not (
+                    r["section"] == s
+                    or r["section"] == f"help/{s}"
+                    or r["section"].startswith(s + "/")
+                ):
                     continue
             mrows.append(r)
         if mrows:
-            snips = {x["rid"]: x for x in self._fts(" OR ".join(quoted), kind, section, 200)}
+            snips = {
+                x["rid"]: x for x in self._fts(" OR ".join(quoted), kind, section, 200)
+            }
             for r in mrows:
                 s = snips.get(r["rid"])
                 add(s if s is not None else r, 0)
 
-        # tier 1: all terms (each may be satisfied by a synonym), tier 2: any term. Both are rescored by
-        # title coverage; when AND alone cannot fill the limit its few hits compete with the OR pool on
-        # the same adjusted score (a spurious full-AND match must not outrank a better-titled page).
+        # tier 1: all terms (each may be satisfied by a synonym), tier 2: any term.
+        # Both are rescored by title coverage; when AND alone cannot fill the limit
+        # its few hits compete with the OR pool on the same adjusted score (a
+        # spurious full-AND match must not outrank a better-titled page).
         expanded = [e for _, e in terms]
         t1 = self._ranked(" AND ".join(expanded), terms, kind, section, mn_toks)
         t1_ids = {r["rid"] for _, r in t1}
         cands = list(t1)
         if len(t1) < limit and len(quoted) > 1:
-            cands += [(sc, r) for sc, r in self._ranked(" OR ".join(expanded), terms, kind, section, mn_toks)
-                      if r["rid"] not in t1_ids]
+            cands += [
+                (sc, r)
+                for sc, r in self._ranked(
+                    " OR ".join(expanded), terms, kind, section, mn_toks
+                )
+                if r["rid"] not in t1_ids
+            ]
             cands.sort(key=lambda x: x[0])
         for _, r in cands:
             add(r, 1 if r["rid"] in t1_ids else 2)
         return results[:limit]
 
-    def _ranked(self, match: str, terms: list[tuple[str, str]], kind: str | None, section: str | None,
-                mn_toks: list[str]) -> list[tuple[float, sqlite3.Row]]:
+    def _ranked(
+        self,
+        match: str,
+        terms: list[tuple[str, str]],
+        kind: str | None,
+        section: str | None,
+        mn_toks: list[str],
+    ) -> list[tuple[float, sqlite3.Row]]:
         rows = self._fts(match, kind, section, RESCORE_POOL, mn_toks)
         if len(terms) < 2 or len(rows) < 2:
             return [(r["score"], r) for r in rows]
-        if " OR " in match:  # OR tier: also pool each term's best title matches (rare words in short titles)
+        # OR tier: also pool each term's best title matches (rare words in short titles)
+        if " OR " in match:
             seen = {r["rid"] for r in rows}
             for orig, _ in terms:
-                for r in self._fts(f"title : {orig}", kind, section, TITLE_POOL, mn_toks):
+                for r in self._fts(
+                    f"title : {orig}", kind, section, TITLE_POOL, mn_toks
+                ):
                     if r["rid"] not in seen:
                         seen.add(r["rid"])
                         rows.append(r)
@@ -539,11 +706,15 @@ class Index:
             npages = self.conn.execute("SELECT count(*) FROM pages").fetchone()[0]
             for orig, _ in terms:
                 try:
-                    hit = self.conn.execute("SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?",
-                                            [f"title : {orig}"]).fetchall()
+                    hit = self.conn.execute(
+                        "SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?",
+                        [f"title : {orig}"],
+                    ).fetchall()
                 except sqlite3.OperationalError:
                     continue
-                if not hit:  # a term no title contains (e.g. an identifier): still part of the denominator
+                # a term no title contains (e.g. an identifier): still part of the
+                # denominator
+                if not hit:
                     total += math.log(1 + npages)
                     continue
                 w = math.log(1 + npages / len(hit))  # rarer title words count more
@@ -553,11 +724,17 @@ class Index:
                         found[rid] += w
         if not total:
             return [(r["score"], r) for r in rows]
-        return sorted(((r["score"] - TITLE_COVERAGE_WEIGHT * found[r["rid"]] / total, r) for r in rows),
-                      key=lambda x: x[0])
+        return sorted(
+            (
+                (r["score"] - TITLE_COVERAGE_WEIGHT * found[r["rid"]] / total, r)
+                for r in rows
+            ),
+            key=lambda x: x[0],
+        )
 
 
 # ---------------------------------------------------------------- manager
+
 
 @dataclass
 class BuildState:
@@ -584,8 +761,12 @@ class IndexManager:
         self.default = default_version(self.versions, cfg.version)
         self._indexes: dict[str, Index] = {}
         self._states: dict[str, BuildState] = {v: BuildState() for v in self.versions}
-        self._locks: dict[str, threading.Lock] = {v: threading.Lock() for v in self.versions}
-        self._ready: dict[str, threading.Event] = {v: threading.Event() for v in self.versions}
+        self._locks: dict[str, threading.Lock] = {
+            v: threading.Lock() for v in self.versions
+        }
+        self._ready: dict[str, threading.Event] = {
+            v: threading.Event() for v in self.versions
+        }
         self._thread: threading.Thread | None = None
 
     def db_path(self, version: str) -> Path:
@@ -596,8 +777,12 @@ class IndexManager:
 
     def start_background(self) -> None:
         if self.default and self._thread is None:
-            self._thread = threading.Thread(target=self._safe_build, args=(self.default,), daemon=True,
-                                            name="index-build")
+            self._thread = threading.Thread(
+                target=self._safe_build,
+                args=(self.default,),
+                daemon=True,
+                name="index-build",
+            )
             self._thread.start()
 
     def _safe_build(self, version: str) -> None:
@@ -608,7 +793,11 @@ class IndexManager:
 
     def _record_failure(self, version: str, e: Exception) -> None:
         st = self._states[version]
-        st.phase, st.error, st.finished = "error", f"{type(e).__name__}: {e}", time.time()
+        st.phase, st.error, st.finished = (
+            "error",
+            f"{type(e).__name__}: {e}",
+            time.time(),
+        )
         self._ready[version].set()
 
     def build(self, version: str, force: bool | None = None) -> Index:
@@ -619,9 +808,17 @@ class IndexManager:
                 return self._indexes[version]
             info = self.versions[version]
             st = self._states[version]
-            st.phase, st.started, st.error, st.done, st.total = "scanning", time.time(), None, 0, 0
+            st.phase, st.started, st.error, st.done, st.total = (
+                "scanning",
+                time.time(),
+                None,
+                0,
+                0,
+            )
             if info.format != "oxygen":
-                raise ValueError(f"{version}: legacy (non-Oxygen) help format is not supported yet")
+                raise ValueError(
+                    f"{version}: legacy (non-Oxygen) help format is not supported yet"
+                )
 
             def progress(done: int, total: int):
                 st.phase, st.done, st.total = "parsing", done, total
@@ -641,8 +838,12 @@ class IndexManager:
                     pass
             if not fresh:
                 st.phase = "parsing"
-                stats = build_index(source, dbp, progress=lambda ph, d, t: setattr(st, "phase", ph),
-                                    fingerprint=fp)
+                stats = build_index(
+                    source,
+                    dbp,
+                    progress=lambda ph, d, t: setattr(st, "phase", ph),
+                    fingerprint=fp,
+                )
                 idx = Index(dbp)
                 st.rebuilt, st.stats = True, stats
             else:
@@ -660,32 +861,44 @@ class IndexManager:
     def get(self, version: str | None = None, wait: float = 45.0) -> Index:
         if not self.versions:
             raise ValueError(
-                "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the 'Logix Designer/ENU' folder "
-                "or an 'rs5000' help folder.")
+                "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the "
+                "'Logix Designer/ENU' folder or an 'rs5000' help folder."
+            )
         v = normalize_version(version) if version else self.default
         if v not in self.versions:
-            raise ValueError(f"Unknown version {version!r}. Available: {', '.join(self.versions)}")
+            raise ValueError(
+                f"Unknown version {version!r}. Available: {', '.join(self.versions)}"
+            )
         if v in self._indexes:
             return self._indexes[v]
         if v == self.default and self._thread is not None:
             if not self._ready[v].wait(wait):
                 st = self._states[v]
                 raise IndexNotReady(
-                    f"The index for {v} is still building ({st.phase}, {st.done}/{st.total} pages). "
-                    "Retry in a few seconds.")
+                    f"The index for {v} is still building "
+                    f"({st.phase}, {st.done}/{st.total} pages). "
+                    "Retry in a few seconds."
+                )
             st = self._states[v]
             if st.error:
                 since = time.time() - st.finished
                 if since < self.RETRY_AFTER:
                     raise RuntimeError(
                         f"Index build for {v} failed: {st.error} (will retry after "
-                        f"{max(1, round(self.RETRY_AFTER - since))}s)")
+                        f"{max(1, round(self.RETRY_AFTER - since))}s)"
+                    )
                 try:
                     return self.build(v)
                 except Exception as e:
                     self._record_failure(v, e)
-                    raise RuntimeError(f"Index build for {v} failed again on retry: {type(e).__name__}: {e}") from e
+                    raise RuntimeError(
+                        f"Index build for {v} failed again on retry: "
+                        f"{type(e).__name__}: {e}"
+                    ) from e
             if v not in self._indexes:  # another caller is retrying the build
-                raise IndexNotReady(f"The index for {v} is rebuilding ({st.phase}). Retry in a few seconds.")
+                raise IndexNotReady(
+                    f"The index for {v} is rebuilding ({st.phase}). "
+                    "Retry in a few seconds."
+                )
             return self._indexes[v]
         return self.build(v)

@@ -1,5 +1,6 @@
-"""End-to-end build and query over a synthetic tree. Trees under 200 files are parsed serially, so no
-multiprocessing pool is involved."""
+"""End-to-end build and query over a synthetic tree.
+
+Trees under 200 files are parsed serially, so no multiprocessing pool is involved."""
 
 import asyncio
 import json
@@ -10,8 +11,8 @@ import sqlite3
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from studio5000_docs_mcp.config import Config
 from studio5000_docs_mcp import index as index_mod
+from studio5000_docs_mcp.config import Config
 from studio5000_docs_mcp.index import IndexManager, build_index
 from studio5000_docs_mcp.sources.oxygen import OxygenSource
 
@@ -27,13 +28,20 @@ def idx(synthetic_root, tmp_path):
 
 def test_stats(idx):
     s = idx.stats()
-    assert s["pages"] == 4 and s["toc_nodes"] == 2 and s["help_ids"] == 3 and s["mnemonics"] == 1
+    assert (
+        s["pages"] == 4
+        and s["toc_nodes"] == 2
+        and s["help_ids"] == 3
+        and s["mnemonics"] == 1
+    )
 
 
 def test_search(idx):
     res = idx.search("zebra")
     assert [r["id"] for r in res] == ["ait_3"]
-    assert idx.search("WCT")[0]["id"] == "ait_2"  # lone mnemonic goes to its instruction page
+    assert (
+        idx.search("WCT")[0]["id"] == "ait_2"
+    )  # lone mnemonic goes to its instruction page
     assert idx.search("Widget Counter (WCT)")[0]["id"] == "ait_2"
     assert idx.search("frobnicate")[0]["id"] == "ait_1"  # keyword-index term
     assert idx.search("Timer.DN")[0]["id"] == "ait_2"
@@ -56,10 +64,16 @@ def test_resolve_and_instruction(idx):
 
 
 def test_breadcrumbs(idx):
-    assert json.loads(idx.resolve_page("ait_2")["crumbs"]) == [["Widget Overview", "ait_1"]]  # TOC chain
+    assert json.loads(idx.resolve_page("ait_2")["crumbs"]) == [
+        ["Widget Overview", "ait_1"]
+    ]  # TOC chain
     assert idx.resolve_page("ait_2")["breadcrumb"] == "Widget Overview"
-    assert idx.resolve_page("ait_3")["breadcrumb"] == "Widget Overview"  # DC.relation fallback
-    assert idx.resolve_page("ait_4")["breadcrumb"] == "Csv Section > Deeper"  # CSV fallback
+    assert (
+        idx.resolve_page("ait_3")["breadcrumb"] == "Widget Overview"
+    )  # DC.relation fallback
+    assert (
+        idx.resolve_page("ait_4")["breadcrumb"] == "Csv Section > Deeper"
+    )  # CSV fallback
     assert idx.resolve_page("ait_1")["breadcrumb"] == ""
 
 
@@ -67,7 +81,9 @@ def test_link_rewriting(idx):
     page = idx.resolve_page("ait_1")
     md = page["markdown"]
     assert "[counter](page:ait_2)" in md
-    assert "nowhere" in md and "missing.html" not in md  # unresolved link keeps text only
+    assert (
+        "nowhere" in md and "missing.html" not in md
+    )  # unresolved link keeps text only
     assert not re.search(r"page:help/", md)
     assert json.loads(page["links"]) == ["ait_2"]
 
@@ -79,6 +95,7 @@ def test_toc_children(idx):
 
 
 # ---------------- cache invalidation and retry ----------------
+
 
 def _mgr(root, tmp_path):
     return IndexManager(Config(help_root=root, db_dir=tmp_path / "db"))
@@ -105,15 +122,18 @@ def test_cache_reused_when_unchanged(synthetic_root, tmp_path):
     assert _build(synthetic_root, tmp_path) is False
 
 
-@pytest.mark.parametrize("rel,size", [
-    ("help/a.html", False),
-    ("index.xml", False),
-    ("index.xml", True),
-    ("rs5000.csv", False),
-    ("context-help-map.xml", False),
-    ("oxygen-webhelp/app/nav-links/json/ait_1-d1.js", False),
-    ("oxygen-webhelp/app/nav-links/json/ait_1-d1.js", True),
-])
+@pytest.mark.parametrize(
+    "rel,size",
+    [
+        ("help/a.html", False),
+        ("index.xml", False),
+        ("index.xml", True),
+        ("rs5000.csv", False),
+        ("context-help-map.xml", False),
+        ("oxygen-webhelp/app/nav-links/json/ait_1-d1.js", False),
+        ("oxygen-webhelp/app/nav-links/json/ait_1-d1.js", True),
+    ],
+)
 def test_rebuild_when_source_changes(synthetic_root, tmp_path, rel, size):
     assert _build(synthetic_root, tmp_path) is True
     _bump(synthetic_root / rel, size)
@@ -126,7 +146,10 @@ def test_build_index_stores_given_fingerprint(synthetic_root, tmp_path):
     db = tmp_path / "x.sqlite"
     build_index(src, db, fingerprint="custom-fp")
     conn = sqlite3.connect(db)
-    assert conn.execute("SELECT value FROM meta WHERE key='fingerprint'").fetchone()[0] == "custom-fp"
+    assert (
+        conn.execute("SELECT value FROM meta WHERE key='fingerprint'").fetchone()[0]
+        == "custom-fp"
+    )
     conn.close()
 
 
@@ -170,6 +193,7 @@ def test_failed_retry_propagates(synthetic_root, tmp_path, monkeypatch):
 
 # ---------------- tool errors (ToolError -> is_error) ----------------
 
+
 @pytest.fixture()
 def server_tools(synthetic_root, tmp_path):
     from studio5000_docs_mcp import server
@@ -204,7 +228,9 @@ def test_tool_zero_results_is_normal_text(server_tools):
 def test_tool_no_manager_versions_raises(tmp_path):
     from studio5000_docs_mcp import server
 
-    server.set_manager(IndexManager(Config(help_root=tmp_path / "empty", db_dir=tmp_path / "db")))
+    server.set_manager(
+        IndexManager(Config(help_root=tmp_path / "empty", db_dir=tmp_path / "db"))
+    )
     try:
         with pytest.raises(ToolError, match="No Studio 5000 help folders"):
             server.get_page("x")
@@ -225,36 +251,69 @@ def test_mcp_protocol_is_error_flag(server_tools):
     bad, good = asyncio.run(run())
     assert bad.is_error is True
     assert bad.content[0].text == (
-        "Error executing tool get_page: No page 'does-not-exist' in v99. Use search_help to find page_ids.")
+        "Error executing tool get_page: No page 'does-not-exist' in v99. "
+        "Use search_help to find page_ids."
+    )
     assert good.is_error is False
     assert "Widget Overview" in good.content[0].text
 
 
 def test_breadcrumb_inbound_and_section_fallbacks(synthetic_root, tmp_path):
     def page(title, ident, body=""):
-        return (f'<html><head><title>{title}</title><meta name="DC.identifier" content="{ident}"></head>'
-                f'<body><main><article><h1>{title}</h1>{body}</article></main></body></html>')
+        return (
+            f"<html><head><title>{title}</title>"
+            f'<meta name="DC.identifier" content="{ident}"></head>'
+            f"<body><main><article><h1>{title}</h1>{body}</article></main>"
+            "</body></html>"
+        )
 
     wct = synthetic_root / "help" / "clinset" / "wct.html"
-    wct.write_text(wct.read_text(encoding="utf-8").replace(
-        "</article>", '<p><a href="../snippet.html">shared</a></p></article>'), encoding="utf-8")
-    (synthetic_root / "help" / "snippet.html").write_text(page("Shared Snippet", "ait_5", "<p>Okapi.</p>"), encoding="utf-8")
+    wct.write_text(
+        wct.read_text(encoding="utf-8").replace(
+            "</article>", '<p><a href="../snippet.html">shared</a></p></article>'
+        ),
+        encoding="utf-8",
+    )
+    (synthetic_root / "help" / "snippet.html").write_text(
+        page("Shared Snippet", "ait_5", "<p>Okapi.</p>"), encoding="utf-8"
+    )
     (synthetic_root / "common-content").mkdir()
-    (synthetic_root / "common-content" / "lonely.html").write_text(page("Lonely Snippet", "ait_6"), encoding="utf-8")
+    (synthetic_root / "common-content" / "lonely.html").write_text(
+        page("Lonely Snippet", "ait_6"), encoding="utf-8"
+    )
 
     db = tmp_path / "x.sqlite"
     stats = build_index(OxygenSource(synthetic_root, "v99"), db, fingerprint="fp")
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
-    row = lambda i: conn.execute("SELECT * FROM pages WHERE id=?", (i,)).fetchone()
-    # inbound: linked from the TOC'd Widget Counter page -> its crumbs + itself (with page id)
-    assert json.loads(row("ait_5")["crumbs"]) == [["Widget Overview", "ait_1"], ["Widget Counter (WCT)", "ait_2"]]
-    assert row("ait_5")["breadcrumb"] == "Widget Overview > Widget Counter (WCT)" and row("ait_5")["depth"] == 2
+
+    def row(i):
+        return conn.execute("SELECT * FROM pages WHERE id=?", (i,)).fetchone()
+
+    # inbound: linked from the TOC'd Widget Counter page -> its crumbs + itself (with
+    # page id)
+    assert json.loads(row("ait_5")["crumbs"]) == [
+        ["Widget Overview", "ait_1"],
+        ["Widget Counter (WCT)", "ait_2"],
+    ]
+    assert (
+        row("ait_5")["breadcrumb"] == "Widget Overview > Widget Counter (WCT)"
+        and row("ait_5")["depth"] == 2
+    )
     # section label: no links at all, no page id in the crumb
-    assert json.loads(row("ait_6")["crumbs"]) == [["Common content", None]] and row("ait_6")["depth"] == 1
+    assert (
+        json.loads(row("ait_6")["crumbs"]) == [["Common content", None]]
+        and row("ait_6")["depth"] == 1
+    )
     # TOC roots stay empty
     assert row("ait_1")["breadcrumb"] == ""
-    assert stats["breadcrumb_methods"] == {"toc": 1, "relation": 1, "csv": 1, "inbound": 1, "section": 1}
+    assert stats["breadcrumb_methods"] == {
+        "toc": 1,
+        "relation": 1,
+        "csv": 1,
+        "inbound": 1,
+        "section": 1,
+    }
     conn.close()
 
 

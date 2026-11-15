@@ -35,17 +35,29 @@ def test_help_ids(synthetic_root):
 
 def test_csv_toc_paths(synthetic_root):
     paths = OxygenSource(synthetic_root, "v99").csv_toc_paths()
-    assert paths["help/a.html"] == ["Top Section", "Sub Section"]  # page dropped, ditamap root dropped
+    assert paths["help/a.html"] == [
+        "Top Section",
+        "Sub Section",
+    ]  # page dropped, ditamap root dropped
 
 
 def test_keywords(synthetic_root):
-    assert OxygenSource(synthetic_root, "v99").keywords() == {"help/a.html": ["gadgets frobnicate"]}
+    assert OxygenSource(synthetic_root, "v99").keywords() == {
+        "help/a.html": ["gadgets frobnicate"]
+    }
 
 
 def test_pages_and_fingerprint(synthetic_root):
     src = OxygenSource(synthetic_root, "v99")
     assert src.page_count() == 4
     assert src.fingerprint().startswith("oxygen:4:")
-    pages = {p.path: p for p in src.iter_pages()}  # small tree: serial path, no process pool
-    assert set(pages) == {"help/a.html", "help/clinset/wct.html", "help/orphan.html", "help/csvonly.html"}
+    pages = {
+        p.path: p for p in src.iter_pages()
+    }  # small tree: serial path, no process pool
+    assert set(pages) == {
+        "help/a.html",
+        "help/clinset/wct.html",
+        "help/orphan.html",
+        "help/csvonly.html",
+    }
     assert pages["help/clinset/wct.html"].relation == "help/a.html"

@@ -8,12 +8,47 @@ from urllib.parse import unquote
 
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
-SKIP_TAGS = {"script", "style", "nav", "noscript", "template", "head", "svg", "button", "form"}
+SKIP_TAGS = {
+    "script",
+    "style",
+    "nav",
+    "noscript",
+    "template",
+    "head",
+    "svg",
+    "button",
+    "form",
+}
 SKIP_CLASS_PARTS = ("related-links", "linklist", "note__title")
 INLINE_TAGS = {
-    "a", "span", "strong", "b", "em", "i", "u", "code", "tt", "kbd", "samp", "var",
-    "sup", "sub", "br", "img", "small", "big", "abbr", "cite", "q", "mark", "s", "del", "ins",
-    "bdo", "wbr", "label",
+    "a",
+    "span",
+    "strong",
+    "b",
+    "em",
+    "i",
+    "u",
+    "code",
+    "tt",
+    "kbd",
+    "samp",
+    "var",
+    "sup",
+    "sub",
+    "br",
+    "img",
+    "small",
+    "big",
+    "abbr",
+    "cite",
+    "q",
+    "mark",
+    "s",
+    "del",
+    "ins",
+    "bdo",
+    "wbr",
+    "label",
 }
 _WS = re.compile(r"\s+")
 
@@ -300,7 +335,6 @@ def _meta(tree: LexborHTMLParser, name: str) -> str:
     return (n.attributes.get("content") or "").strip() if n else ""
 
 
-
 def parse_html(html: str, fallback_path: str):
     """Parse one Oxygen page. Returns a RawPage."""
     from .sources.base import RawPage
@@ -309,7 +343,11 @@ def parse_html(html: str, fallback_path: str):
     path = _meta(tree, "wh-out-relpath").replace("\\", "/") or fallback_path
     t = tree.css_first("head > title") or tree.css_first("title")
     title = _WS.sub(" ", t.text(strip=True)).strip() if t else ""
-    article = tree.css_first("main article") or tree.css_first("article") or tree.css_first("main")
+    article = (
+        tree.css_first("main article")
+        or tree.css_first("article")
+        or tree.css_first("main")
+    )
     h1 = article.css_first("h1") if article is not None else None
     if not title and h1 is not None:
         title = _WS.sub(" ", h1.text(strip=True))
@@ -351,19 +389,27 @@ def markdown_to_text(md: str) -> str:
 
 
 def clean_punct(text: str) -> str:
-    """Remove sentence-final '.', '-', '_' glued to words (tokenchars would keep them)."""
+    """Remove sentence-final '.', '-', '_' glued to words.
+
+    (The tokenchars setting would otherwise keep them.)"""
     return _TRAIL.sub("", text)
 
 
 def expand_identifiers(text: str) -> str:
-    """Extra tokens so that parts of Timer.DN, 1756-IF16, Axis_CIP_Drive are searchable."""
+    """Extra tokens so parts of Timer.DN, 1756-IF16, Axis_CIP_Drive are searchable."""
     extra: set[str] = set()
     for tok in _TOKEN.findall(text):
-        tok = tok.strip("-_.") if not tok.startswith(".") else "." + tok[1:].strip("-_.")
+        tok = (
+            tok.strip("-_.") if not tok.startswith(".") else "." + tok[1:].strip("-_.")
+        )
         if not tok or not any(c in tok for c in "._-"):
             continue
         low = tok.lower()
-        if low.startswith(".") and len(low) > 1 and not any(c in low[1:] for c in "._-"):
+        if (
+            low.startswith(".")
+            and len(low) > 1
+            and not any(c in low[1:] for c in "._-")
+        ):
             extra.add(low[1:])
             continue
         parts = [p for p in re.split(r"[._\-]+", low) if p]
@@ -377,8 +423,42 @@ def expand_identifiers(text: str) -> str:
 
 
 _STOP = set(
-    "a an and are as at be by can do does for from how i in is it of on or that the this to was what when where which who why with".split()
-    + "between difference use using my so".split()
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    ]
+    + ["between", "difference", "use", "using", "my", "so"]
 )
 
 
@@ -397,16 +477,19 @@ def query_tokens(query: str) -> list[str]:
 
 
 def is_stop(tok: str) -> bool:
-    """Common English words are dropped, except ALL-CAPS ones (FOR, AND, OR, NOT are mnemonics)."""
+    """Common English words are dropped, except ALL-CAPS ones.
+
+    (FOR, AND, OR, NOT are mnemonics.)"""
     return tok.lower() in _STOP and not (tok.isupper() and len(tok) > 1)
 
 
-# Query-side synonyms: general Logix/PLC vocabulary equivalences only (keyed by lower-case word, applied
-# to lower/mixed-case query words, never to ALL-CAPS mnemonics). Each entry must be an equivalence a
-# controls engineer would use in any context. Do NOT add entries whose purpose is to steer one specific
-# query to its expected page, and no query-specific phrases. Expansions only widen candidate recall;
-# they never count toward title coverage. Values are single FTS tokens or phrases (hyphenated words
-# are one token in this index, hence "one-shot").
+# Query-side synonyms: general Logix/PLC vocabulary equivalences only (keyed by
+# lower-case word, applied to lower/mixed-case query words, never to ALL-CAPS
+# mnemonics). Each entry must be an equivalence a controls engineer would use in any
+# context. Do NOT add entries whose purpose is to steer one specific query to its
+# expected page, and no query-specific phrases. Expansions only widen candidate
+# recall; they never count toward title coverage. Values are single FTS tokens or
+# phrases (hyphenated words are one token in this index, hence "one-shot").
 SYNONYMS: dict[str, tuple[str, ...]] = {
     "create": ("define", "new"),
     "make": ("create",),
@@ -442,26 +525,28 @@ _PLAIN_HYPHEN = re.compile(r"^[A-Za-z]+(?:-[A-Za-z]+)+$")
 
 
 def _q(t: str) -> str:
-    return '"%s"' % t.replace('"', "")
+    return f'"{t.replace('"', "")}"'
 
 
 def query_term(tok: str) -> tuple[str, str]:
     """(original, expanded) FTS5 expressions for one query token from query_tokens().
 
-    original matches the token as typed; a plain-word hyphenated token ('program-scoped') also matches its
-    parts, mirroring expand_identifiers at index time. Catalog-style tokens ('1756-IF16') stay whole.
-    expanded adds synonyms (lower/mixed case only). Both are valid FTS5 and always parenthesised or quoted."""
+    original matches the token as typed; a plain-word hyphenated token
+    ('program-scoped') also matches its parts, mirroring expand_identifiers at index
+    time. Catalog-style tokens ('1756-IF16') stay whole. expanded adds synonyms
+    (lower/mixed case only). Both are valid FTS5 and always parenthesised or
+    quoted."""
     if tok.isupper() and len(tok) > 1:
         return _q(tok), _q(tok)
     orig = _q(tok)
     if _PLAIN_HYPHEN.match(tok):
         parts = [p for p in tok.lower().split("-") if not is_stop(p)]
         if len(parts) >= 2:
-            orig = "(%s OR (%s))" % (_q(tok), " AND ".join(_q(p) for p in parts))
+            orig = f"({_q(tok)} OR ({' AND '.join(_q(p) for p in parts)}))"
         elif len(parts) == 1:
-            orig = "(%s OR %s)" % (_q(tok), _q(parts[0]))
+            orig = f"({_q(tok)} OR {_q(parts[0])})"
     low = tok.lower()
     syns = SYNONYMS.get(low) or SYNONYMS.get(low[:-1] if low.endswith("s") else low, ())
     if not syns:
         return orig, orig
-    return orig, "(%s OR %s)" % (orig, " OR ".join(_q(s) for s in syns))
+    return orig, f"({orig} OR {' OR '.join(_q(s) for s in syns)})"

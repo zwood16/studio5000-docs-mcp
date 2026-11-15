@@ -6,7 +6,8 @@ import yaml
 pytestmark = pytest.mark.integration
 
 HERE = Path(__file__).parent
-# name -> (file, hit@3 floor). eval.yaml is the tuning set; eval_holdout.yaml must never be tuned against.
+# name -> (file, hit@3 floor). eval.yaml is the tuning set; eval_holdout.yaml must
+# never be tuned against.
 SETS = {
     "eval": ("eval.yaml", 0.7),
     "holdout": ("eval_holdout.yaml", 0.5),
@@ -34,5 +35,8 @@ def test_hit_at_3(index, name):
     score = hits / len(items)
     print(f"\n[{name}: {filename}]")
     print("\n".join(lines))
-    print(f"{name} hit@3 = {hits}/{len(items)} = {score:.2f}   MRR@10 = {rr / len(items):.3f}")
+    print(
+        f"{name} hit@3 = {hits}/{len(items)} = {score:.2f}   "
+        f"MRR@10 = {rr / len(items):.3f}"
+    )
     assert score >= threshold

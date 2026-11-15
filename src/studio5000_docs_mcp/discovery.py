@@ -38,13 +38,20 @@ def _version_from_path(p: Path) -> str | None:
 
 
 def _windows_probe_roots() -> list[Path]:
-    # Default Studio 5000 install location (confirmed on Windows 11, v30-v37 under Program Files (x86)).
+    # Default Studio 5000 install location (confirmed on Windows 11, v30-v37 under
+    # Program Files (x86)).
     # Set S5K_HELP_ROOT for non-default installs.
     roots = []
     for env in ("ProgramFiles(x86)", "ProgramFiles"):
         base = os.environ.get(env)
         if base:
-            roots.append(Path(base) / "Rockwell Software" / "Studio 5000" / "Logix Designer" / "ENU")
+            roots.append(
+                Path(base)
+                / "Rockwell Software"
+                / "Studio 5000"
+                / "Logix Designer"
+                / "ENU"
+            )
     return roots
 
 
@@ -79,7 +86,9 @@ def discover(cfg: Config) -> dict[str, VersionInfo]:
     return {v.version: v for v in sorted(found, key=lambda v: v.number)}
 
 
-def default_version(versions: dict[str, VersionInfo], requested: str | None) -> str | None:
+def default_version(
+    versions: dict[str, VersionInfo], requested: str | None
+) -> str | None:
     requested = normalize_version(requested)
     if requested and requested in versions:
         return requested

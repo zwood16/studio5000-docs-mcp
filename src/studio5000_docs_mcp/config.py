@@ -35,13 +35,30 @@ def normalize_version(v: str | None) -> str | None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog=APP_NAME,
-        description="MCP server for searching the Studio 5000 Logix Designer help (Oxygen WebHelp, v37+).",
+        description=(
+            "MCP server for searching the Studio 5000 Logix Designer help "
+            "(Oxygen WebHelp, v37+)."
+        ),
     )
-    p.add_argument("--root", help="Help root: an rs5000 folder or the 'Logix Designer/ENU' folder (env S5K_HELP_ROOT)")
+    p.add_argument(
+        "--root",
+        help=(
+            "Help root: an rs5000 folder or the 'Logix Designer/ENU' folder "
+            "(env S5K_HELP_ROOT)"
+        ),
+    )
     p.add_argument("--version", help="Default help version, e.g. v37 (env S5K_VERSION)")
-    p.add_argument("--force-rebuild", action="store_true", help="Rebuild the index even if the cache is fresh")
+    p.add_argument(
+        "--force-rebuild",
+        action="store_true",
+        help="Rebuild the index even if the cache is fresh",
+    )
     p.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
-    p.add_argument("--build-only", action="store_true", help="Build the index, print statistics and timing, then exit")
+    p.add_argument(
+        "--build-only",
+        action="store_true",
+        help="Build the index, print statistics and timing, then exit",
+    )
     return p
 
 

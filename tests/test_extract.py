@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 
 from studio5000_docs_mcp.extract import (
+    SYNONYMS,
     clean_punct,
     expand_identifiers,
     is_stop,
     parse_html,
-    SYNONYMS,
     query_term,
     query_tokens,
     resolve_ref,
@@ -27,12 +27,16 @@ def test_metadata(page):
     assert page.description == "Counts widgets."
     assert page.identifier == "ait_1"
     assert page.toc_id == "ait_1-d1"
-    assert page.relation == "help/index.html"  # DC.relation resolved against the page path
+    assert (
+        page.relation == "help/index.html"
+    )  # DC.relation resolved against the page path
 
 
 def test_fallback_path_without_meta():
-    p = parse_html("<html><head><title>T</title></head><body><main><article><p>x</p></article></main></body></html>",
-                   "help/z.html")
+    p = parse_html(
+        "<html><head><title>T</title></head><body><main><article><p>x</p></article></main></body></html>",
+        "help/z.html",
+    )
     assert p.path == "help/z.html" and p.relation == "" and p.markdown == "# T\n\nx"
 
 
@@ -66,13 +70,18 @@ def test_table(page):
     assert "| Tall | one \\| pipe | x |" in rows  # pipe escaped
     assert "| Tall | two | y |" in rows  # rowspan repeated on the next row
     assert "| Multi | First para<br>Second para | - item 1<br>- item 2 |" in rows
-    assert all(not r.startswith("|") or r.count("|") - r.count("\\|") == 4 for r in rows)
+    assert all(
+        not r.startswith("|") or r.count("|") - r.count("\\|") == 4 for r in rows
+    )
 
 
 def test_external_and_anchor_links():
-    html = ("<html><head><title>T</title></head><body><main><article>"
-            '<p><a href="https://example.com/a">ext</a> <a href="#top">anchor</a> <a href="doc.pdf">pdf</a></p>'
-            "</article></main></body></html>")
+    html = (
+        "<html><head><title>T</title></head><body><main><article>"
+        '<p><a href="https://example.com/a">ext</a> <a href="#top">anchor</a> '
+        '<a href="doc.pdf">pdf</a></p>'
+        "</article></main></body></html>"
+    )
     p = parse_html(html, "help/a.html")
     assert "[ext](https://example.com/a)" in p.markdown
     assert "page:" not in p.markdown
@@ -87,6 +96,7 @@ def test_resolve_ref():
 
 
 # ---------------- FTS helpers ----------------
+
 
 def test_clean_punct():
     assert clean_punct("the end. Next-") == "the end Next"
@@ -111,22 +121,45 @@ def test_query_tokens_basic():
     assert query_tokens("Timer.DN.") == ["Timer.DN"]
 
 
-@pytest.mark.parametrize("q", [
-    '"', 'what "sets" TON', "(", ")))", "AND OR NOT NEAR", "NEAR(a b)", "a*", "^x", "col:val", "title:TON",
-    "", "   ", "-", "' OR 1=1 --", "\\", "{x}", "café 日本語 αβ",
-])
+@pytest.mark.parametrize(
+    "q",
+    [
+        '"',
+        'what "sets" TON',
+        "(",
+        ")))",
+        "AND OR NOT NEAR",
+        "NEAR(a b)",
+        "a*",
+        "^x",
+        "col:val",
+        "title:TON",
+        "",
+        "   ",
+        "-",
+        "' OR 1=1 --",
+        "\\",
+        "{x}",
+        "café 日本語 αβ",
+    ],
+)
 def test_query_tokens_hostile(q):
     toks = query_tokens(q)
     assert isinstance(toks, list)
     for t in toks:
-        assert t and not any(c in t for c in '"()*^:{}\\\' ')
+        assert t and not any(c in t for c in "\"()*^:{}\\' ")
 
 
 def test_query_tokens_hostile_content():
     assert query_tokens("") == []
     assert query_tokens('a*"b') == ["a", "b"]
     assert query_tokens("col:val") == ["col", "val"]
-    assert query_tokens("AND OR NOT NEAR") == ["AND", "OR", "NOT", "NEAR"]  # quoted later, so harmless
+    assert query_tokens("AND OR NOT NEAR") == [
+        "AND",
+        "OR",
+        "NOT",
+        "NEAR",
+    ]  # quoted later, so harmless
     assert "café" in query_tokens("café au lait")
 
 
@@ -138,8 +171,29 @@ def test_is_stop():
 
 
 def test_question_stopwords_dropped_but_caps_kept():
-    for w in ("how", "do", "does", "what", "which", "when", "where", "why", "I", "the", "a", "an", "to", "of",
-              "with", "between", "difference", "use", "using", "my", "Using"):
+    for w in (
+        "how",
+        "do",
+        "does",
+        "what",
+        "which",
+        "when",
+        "where",
+        "why",
+        "I",
+        "the",
+        "a",
+        "an",
+        "to",
+        "of",
+        "with",
+        "between",
+        "difference",
+        "use",
+        "using",
+        "my",
+        "Using",
+    ):
         assert is_stop(w), w
     for w in ("FOR", "AND", "OR", "TO", "USE"):
         assert not is_stop(w), w
@@ -149,8 +203,13 @@ def test_query_term_hyphen_split():
     orig, exp = query_term("program-scoped")
     assert orig == '("program-scoped" OR ("program" AND "scoped"))'
     assert exp == orig  # hyphenated tokens get no synonym expansion
-    assert query_term("false-to-true")[0] == '("false-to-true" OR ("false" AND "true"))'  # stopword part dropped
-    assert query_term("1756-IF16") == ('"1756-IF16"', '"1756-IF16"')  # catalog id stays whole
+    assert (
+        query_term("false-to-true")[0] == '("false-to-true" OR ("false" AND "true"))'
+    )  # stopword part dropped
+    assert query_term("1756-IF16") == (
+        '"1756-IF16"',
+        '"1756-IF16"',
+    )  # catalog id stays whole
     assert query_term("Timer.DN") == ('"Timer.DN"', '"Timer.DN"')
 
 
@@ -158,17 +217,43 @@ def test_query_term_synonyms():
     orig, exp = query_term("create")
     assert orig == '"create"'
     assert exp == '("create" OR "define" OR "new")'
-    assert query_term("Create")[1] == '("Create" OR "define" OR "new")'  # FTS is case-insensitive
+    assert (
+        query_term("Create")[1] == '("Create" OR "define" OR "new")'
+    )  # FTS is case-insensitive
     assert query_term("FOR") == ('"FOR"', '"FOR"')  # ALL-CAPS never expanded
     assert query_term("timer") == ('"timer"', '"timer"')
-    assert all(v and all(isinstance(x, str) and '"' not in x for x in v) for v in SYNONYMS.values())
+    assert all(
+        v and all(isinstance(x, str) and '"' not in x for x in v)
+        for v in SYNONYMS.values()
+    )
     assert all(k == k.lower() for k in SYNONYMS)
 
 
-@pytest.mark.parametrize("q", [
-    '"', 'what "sets" TON', "(", ")))", "AND OR NOT NEAR", "NEAR(a b)", "a*", "^x", "col:val", "title:TON",
-    "", "   ", "-", "' OR 1=1 --", "\\", "{x}", "café 日本語 αβ", "a-b-c-", "create-new", "-x-y",
-])
+@pytest.mark.parametrize(
+    "q",
+    [
+        '"',
+        'what "sets" TON',
+        "(",
+        ")))",
+        "AND OR NOT NEAR",
+        "NEAR(a b)",
+        "a*",
+        "^x",
+        "col:val",
+        "title:TON",
+        "",
+        "   ",
+        "-",
+        "' OR 1=1 --",
+        "\\",
+        "{x}",
+        "café 日本語 αβ",
+        "a-b-c-",
+        "create-new",
+        "-x-y",
+    ],
+)
 def test_query_term_hostile(q):
     for t in query_tokens(q):
         orig, exp = query_term(t)

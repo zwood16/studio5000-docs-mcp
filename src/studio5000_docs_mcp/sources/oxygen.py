@@ -8,9 +8,9 @@ import multiprocessing
 import os
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
-from typing import Callable, Iterator
 
 from ..extract import parse_html
 from .base import RawPage, TocNode
@@ -44,12 +44,19 @@ def _parse_one(root: str, rel: str) -> RawPage | None:
             html = f.read().decode("utf-8", errors="replace")
         return parse_html(html, rel)
     except Exception as e:  # keep the build going; report via empty page
-        return RawPage(path=rel, title=f"[parse error] {rel}", markdown=f"parse error: {e}")
+        return RawPage(
+            path=rel, title=f"[parse error] {rel}", markdown=f"parse error: {e}"
+        )
 
 
 class OxygenSource:
-    def __init__(self, root: Path, version: str, workers: int | None = None,
-                 progress: Callable[[int, int], None] | None = None):
+    def __init__(
+        self,
+        root: Path,
+        version: str,
+        workers: int | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ):
         self.root = Path(root)
         self.version = version
         self.workers = workers if workers is not None else min(8, os.cpu_count() or 1)
@@ -124,7 +131,7 @@ class OxygenSource:
                         if page is not None:
                             yield page
                 return
-            except (OSError, ImportError, PermissionError):
+            except OSError, ImportError, PermissionError:
                 if done:
                     raise
         for rel in files:
@@ -154,7 +161,7 @@ class OxygenSource:
             if topic.get("tocID") and f.exists():
                 try:
                     data = _load_js_object(f)
-                except (ValueError, OSError):
+                except ValueError, OSError:
                     return None
                 for v in data.values():
                     if isinstance(v, dict) and "topics" in v:
@@ -169,7 +176,9 @@ class OxygenSource:
                 seen.add(nid)
                 href = (t.get("href") or "").replace("\\", "/")
                 href = href.split("#", 1)[0]
-                nodes.append(TocNode(nid, parent, _strip_html(t.get("title", "")), href, i))
+                nodes.append(
+                    TocNode(nid, parent, _strip_html(t.get("title", "")), href, i)
+                )
                 kids = children_of(t)
                 if kids:
                     add(kids, nid)
@@ -180,8 +189,12 @@ class OxygenSource:
 
     def toc_title(self) -> str:
         try:
-            return _strip_html(_load_js_object(self.root / NAVLINKS_DIR / "nav-links.js").get("title", ""))
-        except (OSError, ValueError):
+            return _strip_html(
+                _load_js_object(self.root / NAVLINKS_DIR / "nav-links.js").get(
+                    "title", ""
+                )
+            )
+        except OSError, ValueError:
             return ""
 
     # ---------- help ids ----------
@@ -193,7 +206,12 @@ class OxygenSource:
                 for _, el in ET.iterparse(f):
                     if el.tag == "appContext":
                         hid = (el.get("helpID") or "").strip()
-                        p = (el.get("path") or "").replace("\\", "/").split("#", 1)[0].strip()
+                        p = (
+                            (el.get("path") or "")
+                            .replace("\\", "/")
+                            .split("#", 1)[0]
+                            .strip()
+                        )
                         if hid and p:
                             out.append((hid, p))
                         el.clear()
@@ -204,7 +222,12 @@ class OxygenSource:
             with open(f, newline="", encoding="utf-8", errors="replace") as fh:
                 for row in csv.reader(fh):
                     if len(row) >= 2 and row[0].strip() and row[1].strip():
-                        out.append((row[0].strip(), row[1].strip().replace("\\", "/").split("#", 1)[0]))
+                        out.append(
+                            (
+                                row[0].strip(),
+                                row[1].strip().replace("\\", "/").split("#", 1)[0],
+                            )
+                        )
         return out
 
     def csv_toc_paths(self) -> dict[str, list[str]]:
@@ -215,11 +238,16 @@ class OxygenSource:
         with open(f, newline="", encoding="utf-8", errors="replace") as fh:
             for row in csv.reader(fh):
                 if len(row) >= 3 and row[1].strip() and row[2].strip():
-                    segs = [s for s in row[2].strip().replace("\\", "/").split("/") if s]
+                    segs = [
+                        s for s in row[2].strip().replace("\\", "/").split("/") if s
+                    ]
                     segs = segs[:-1]  # drop the page itself
                     if segs and segs[0] == "contents-ditamap":
                         segs = segs[1:]
-                    out[row[1].strip().split("#", 1)[0]] = [s.replace("-", " ").replace("_", " ").strip().title() for s in segs]
+                    out[row[1].strip().split("#", 1)[0]] = [
+                        s.replace("-", " ").replace("_", " ").strip().title()
+                        for s in segs
+                    ]
         return out
 
     # ---------- keyword index ----------
