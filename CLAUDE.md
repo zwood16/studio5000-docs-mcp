@@ -19,7 +19,7 @@ uv run studio5000-docs-mcp                         # run the server (stdio)
 
 Offline tests need nothing. Integration tests (marker `integration`: tests using the `manager`/`index`/`tools` fixtures, plus `tests/test_eval.py`) and real builds need a help install: set `S5K_HELP_ROOT` to the `Logix Designer/ENU` folder or one `rs5000` folder; when it is unset or not found the integration tests skip (there is no fallback path). On the author's Linux box the help is on a read-only share at `/mnt/studio5000/Logix Designer/ENU` (v37 root: `.../v37/Bin/Help/ENU/rs5000`). Never write into the help folder. Offline fixtures are made-up content (`tests/fixtures/`, `synthetic_root` in `tests/conftest.py`), never Rockwell text.
 
-No linter or formatter is configured.
+Lint and format with ruff (config in `pyproject.toml`): `uv run ruff check` and `uv run ruff format`.
 
 ## Architecture
 

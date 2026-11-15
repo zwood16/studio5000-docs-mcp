@@ -24,8 +24,23 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.2.0",
     "pyyaml>=6.0.3",
+    "ruff>=0.17.5",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["integration: needs a real Studio 5000 help install (set S5K_HELP_ROOT)"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# The rule categories to enable.
+select = [
+    "E",   # pycodestyle (catches formatting-adjacent errors)
+    "F",   # Pyflakes (catches logical errors, like unused variables)
+    "I",   # isort (automatically sorts your imports)
+    "UP",  # pyupgrade (suggests modern syntax upgrades)
+    "B",   # flake8-bugbear (catches common bugs and gotchas)
+    "SIM", # flake8-simplify (suggests cleaner, more elegant code)
+]
