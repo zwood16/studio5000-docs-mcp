@@ -1,6 +1,6 @@
 [project]
 name = "studio5000-docs-mcp"
-version = "0.1.0"
+version = "1.0.0"
 description = "MCP server that indexes the Studio 5000 Logix Designer v37 help (Oxygen WebHelp) into SQLite FTS5 and exposes search and read tools"
 readme = "README.md"
 authors = [
