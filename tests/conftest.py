@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -121,6 +122,98 @@ def synthetic_root(tmp_path):
     (root / "index.xml").write_text(
         '<index xmlns="http://www.oxygenxml.com/ns/webhelp/index"><term name="gadgets">'
         '<term name="frobnicate"><target>help/a.html</target></term></term></index>',
+        encoding="utf-8",
+    )
+    return root
+
+
+# ---------------- synthetic offline legacy help tree ----------------
+
+_LEGACY_FIXTURE = Path(__file__).parent / "fixtures" / "legacy_page.htm"
+
+
+def _legacy_html(title: str, body_word: str = "") -> str:
+    html = _LEGACY_FIXTURE.read_text(encoding="utf-8")
+    html = html.replace("Widget Pulse Timer (WPT)", title)
+    return html.replace(
+        "The WPT instruction emits a pulse",
+        f"{body_word} The instruction emits a pulse",
+    )
+
+
+@pytest.fixture()
+def legacy_root(tmp_path):
+    """A tiny made-up legacy (v31-v36 style) help tree under a v98 folder."""
+    root = tmp_path / "v98" / "Bin" / "Help" / "ENU" / "rs5000"
+    root.mkdir(parents=True)
+    pages = {
+        "ld.htm": _legacy_html("Widget Designer Overview", "Platypus."),
+        "wpt.htm": _legacy_html("Widget Pulse Timer (WPT)", "Wombat."),
+        "deep.htm": _legacy_html("Deep Hidden Widget Page", "Narwhal."),
+        "foo.htm": _legacy_html("Foo Page", "Axolotl."),
+        "foo_1.htm": _legacy_html("Foo Page", "Axolotl."),
+        "index.htm": "<html><head><title>Nav</title></head><body>nav</body></html>",
+        "indexpage.htm": "<html><body>nav</body></html>",
+        "search_results.htm": "<html><body>nav</body></html>",
+        "heading.htm": "<html><body>nav</body></html>",
+    }
+    for name, html in pages.items():
+        (root / name).write_text(html, encoding="utf-8")
+    (root / "mft").mkdir()
+    (root / "mft" / "ignored.htm").write_text("<html></html>", encoding="utf-8")
+    toc = [
+        {
+            "id": 1,
+            "o": 1,
+            "text": "Logix Designer",
+            "url": "ld.htm",
+            "node": "0",
+            "children": [
+                {
+                    "id": 2,
+                    "o": 2,
+                    "text": "Foo &amp; Bar",
+                    "url": "foo.htm#x",
+                    "leaf": True,
+                }
+            ],
+        },
+        {
+            "id": 3,
+            "o": 3,
+            "text": "Instruction Set",
+            "url": "",
+            "node": "1",
+            "children": [
+                {
+                    "id": 4,
+                    "o": 4,
+                    "text": "Widget Pulse Timer (WPT)",
+                    "url": "wpt.htm",
+                    "children": [
+                        {
+                            "id": 5,
+                            "o": 5,
+                            "text": "Deep Hidden Widget Page",
+                            "url": "deep.htm",
+                            "hidden": True,
+                            "leaf": True,
+                        }
+                    ],
+                }
+            ],
+        },
+        {"id": 6, "o": 6, "text": "Foo Page", "url": "foo_1.htm", "hidden": True},
+    ]
+    (root / "toc.json").write_text(json.dumps(toc), encoding="utf-8-sig")
+    (root / "rs5000.csv").write_text(
+        "555,wpt.htm\n\n556,deep.htm#frag\n", encoding="utf-8"
+    )
+    (root / "keywords.csv").write_text(
+        '"Title","URL","Keyword","Rank"\n'
+        '"Widget Pulse Timer","wpt.htm","pulsing","1"\n'
+        '"Widget Pulse Timer","wpt.htm","pulsing","2"\n'
+        '"Widget Pulse Timer","wpt.htm","ticking","3"\n',
         encoding="utf-8",
     )
     return root

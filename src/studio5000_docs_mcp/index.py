@@ -23,6 +23,7 @@ from .extract import (
     query_tokens,
 )
 from .sources.base import HelpSource, RawPage
+from .sources.legacy import LegacySource
 from .sources.oxygen import OxygenSource
 
 SCHEMA_VERSION = 4
@@ -60,17 +61,21 @@ _MN_RE = re.compile(r"\(([A-Z0-9_ ]+)\)")
 _MN_DASH_RE = re.compile(r"[-\u2013]\s?([A-Z][A-Z0-9_]+)$")
 
 
-def extract_mnemonics(title: str, path: str = "") -> list[str]:
+def extract_mnemonics(
+    title: str, path: str = "", section: str | None = None
+) -> list[str]:
     """All parenthesised all-caps mnemonics in a title.
 
     E.g. 'Get ... (GSV) and Set ... (SSV)'. Instruction-set pages titled like
     'DINT to String-DTOS' use a trailing '-MNEMONIC' instead."""
+    if section is None:
+        section = section_of(path)
     out = []
     for m in _MN_RE.findall(title):
         m = m.strip()
         if len(m) >= 2 and re.search(r"[A-Z]", m) and m not in out:
             out.append(m)
-    if not out and path.startswith("help/clinset/"):
+    if not out and section == "help/clinset":
         m = _MN_DASH_RE.search(title.strip())
         if m:
             out.append(m.group(1))
@@ -85,6 +90,8 @@ SECTION_LABELS = {
     "help/rs5000": "Studio 5000 Logix Designer",
     "help/modules": "Module Information",
     "publications": "Publications",
+    "quickstart": "Quick Start Steps",
+    "glossary": "Glossary",
 }
 
 
@@ -104,7 +111,7 @@ _PROPS_RE = re.compile(
 _CATALOG_RE = re.compile(r"\b\d{4}[A-Z]?-[A-Z0-9]+")
 
 
-def classify(path: str, title: str, mnemonic: str) -> str:
+def classify(path: str, title: str, mnemonic: str, section: str | None = None) -> str:
     """Page kind from path and title. Order matters: the first matching rule wins.
 
     instruction: help/clinset page with a mnemonic (flow-chart image pages excluded)
@@ -116,9 +123,11 @@ def classify(path: str, title: str, mnemonic: str) -> str:
     module:      anything under help/modules, or a page naming a catalog-numbered module
     concept:     the rest (overviews, procedures, attribute references)
     """
+    if section is None:
+        section = section_of(path)
     t = title.lower().strip()
     pl = path.lower()
-    if pl.startswith("help/clinset/") and mnemonic and "flow chart" not in t:
+    if section == "help/clinset" and mnemonic and "flow chart" not in t:
         return "instruction"
     if "module-errors" in pl or _FAULT_START_RE.search(t):
         return "fault"
@@ -132,7 +141,7 @@ def classify(path: str, title: str, mnemonic: str) -> str:
         return "dialog"
     if _FAULT_WORD_RE.search(t):
         return "fault"
-    if pl.startswith("help/modules/") or _CATALOG_RE.search(title):
+    if section == "help/modules" or _CATALOG_RE.search(title):
         return "module"
     return "concept"
 
@@ -170,6 +179,7 @@ def build_index(
             p.identifier if p.identifier and id_counts[p.identifier] == 1 else p.path
         )
     by_path = {p.path: p for p in pages}
+    sec_of = {p.path: p.section or section_of(p.path) for p in pages}
 
     # ---- toc
     nodes = source.toc()
@@ -215,6 +225,9 @@ def build_index(
                 res = [(t, None) for t in csv_paths[path]]
                 if res:
                     method[path] = "csv"
+            elif page is not None and page.crumb_trail:
+                res = [(t, path_to_id.get(cp)) for t, cp in page.crumb_trail]
+                method[path] = "page"
         memo[path] = res
         return res
 
@@ -231,17 +244,17 @@ def build_index(
         if (
             not res and p.path not in href_to_node
         ):  # TOC pages with no ancestors are roots; leave them empty
-            sec = section_of(p.path)
+            sec = sec_of[p.path]
             cands = sorted({c for c in inbound.get(p.path, []) if primary[c]})
             if cands:
                 sec_counts: dict[str, int] = {}
                 for c in cands:
-                    sec_counts[section_of(c)] = sec_counts.get(section_of(c), 0) + 1
+                    sec_counts[sec_of[c]] = sec_counts.get(sec_of[c], 0) + 1
                 best = min(
                     cands,
                     key=lambda c: (
-                        section_of(c) != sec,
-                        -sec_counts[section_of(c)],
+                        sec_of[c] != sec,
+                        -sec_counts[sec_of[c]],
                         len(primary[c]),
                         c,
                     ),
@@ -280,9 +293,10 @@ def build_index(
     n_mn = 0
     for rid, p in enumerate(sorted(pages, key=lambda x: x.path), start=1):
         pid = path_to_id[p.path]
-        mns = extract_mnemonics(p.title, p.path)
+        sec = sec_of[p.path]
+        mns = extract_mnemonics(p.title, p.path, sec)
         mnemonic = " ".join(mns)
-        kind = classify(p.path, p.title, mnemonic)
+        kind = classify(p.path, p.title, mnemonic, sec)
         crumbs = final[p.path]
         if crumbs:
             n_with_crumbs += 1
@@ -303,7 +317,7 @@ def build_index(
                 p.title,
                 mnemonic,
                 kind,
-                section_of(p.path),
+                sec,
                 breadcrumb,
                 json.dumps(crumbs),
                 p.description,
@@ -366,7 +380,7 @@ def build_index(
         "pages_with_breadcrumb": n_with_crumbs,
         "breadcrumb_methods": {
             m: sum(1 for v in method.values() if v == m)
-            for m in ("toc", "relation", "csv", "inbound", "section")
+            for m in ("toc", "relation", "csv", "page", "inbound", "section")
         },
         "toc_nodes": len(nodes),
         "help_ids": len(seen_h),
@@ -815,15 +829,14 @@ class IndexManager:
                 0,
                 0,
             )
-            if info.format != "oxygen":
-                raise ValueError(
-                    f"{version}: legacy (non-Oxygen) help format is not supported yet"
-                )
+            if info.format not in ("oxygen", "legacy"):
+                raise ValueError(f"{version}: unrecognised help format at {info.root}")
 
             def progress(done: int, total: int):
                 st.phase, st.done, st.total = "parsing", done, total
 
-            source = OxygenSource(info.root, version, progress=progress)
+            source_cls = OxygenSource if info.format == "oxygen" else LegacySource
+            source = source_cls(info.root, version, progress=progress)
             fp = db_fingerprint(source)
             dbp = self.db_path(version)
             fresh = False
@@ -862,7 +875,8 @@ class IndexManager:
         if not self.versions:
             raise ValueError(
                 "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the "
-                "'Logix Designer/ENU' folder or an 'rs5000' help folder."
+                "'Studio 5000' install folder, the 'Logix Designer/ENU' folder, "
+                "or an 'rs5000' help folder."
             )
         v = normalize_version(version) if version else self.default
         if v not in self.versions:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import multiprocessing
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -13,7 +12,7 @@ from functools import partial
 from pathlib import Path
 
 from ..extract import parse_html
-from .base import RawPage, TocNode
+from .base import RawPage, TocNode, parallel_map_pages
 
 CONTENT_DIRS = ("help", "publications", "common-content")
 NAVLINKS_DIR = Path("oxygen-webhelp") / "app" / "nav-links" / "json"
@@ -116,31 +115,8 @@ class OxygenSource:
     # ---------- pages ----------
     def iter_pages(self) -> Iterator[RawPage]:
         self._scan()
-        files = self._files
-        total = len(files)
         fn = partial(_parse_one, str(self.root))
-        done = 0
-        if self.workers > 1 and total > 200:
-            try:
-                ctx = multiprocessing.get_context("spawn")
-                with ctx.Pool(self.workers) as pool:
-                    for page in pool.imap(fn, files, chunksize=32):
-                        done += 1
-                        if self.progress and done % 100 == 0:
-                            self.progress(done, total)
-                        if page is not None:
-                            yield page
-                return
-            except OSError, ImportError, PermissionError:
-                if done:
-                    raise
-        for rel in files:
-            page = fn(rel)
-            done += 1
-            if self.progress and done % 100 == 0:
-                self.progress(done, total)
-            if page is not None:
-                yield page
+        yield from parallel_map_pages(fn, self._files, self.workers, self.progress)
 
     # ---------- TOC ----------
     def toc(self) -> list[TocNode]:

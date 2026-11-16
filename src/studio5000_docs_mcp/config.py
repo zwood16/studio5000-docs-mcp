@@ -37,14 +37,14 @@ def build_parser() -> argparse.ArgumentParser:
         prog=APP_NAME,
         description=(
             "MCP server for searching the Studio 5000 Logix Designer help "
-            "(Oxygen WebHelp, v37+)."
+            "(Oxygen WebHelp v37; legacy v31+ detected)."
         ),
     )
     p.add_argument(
         "--root",
         help=(
-            "Help root: an rs5000 folder or the 'Logix Designer/ENU' folder "
-            "(env S5K_HELP_ROOT)"
+            "Help root: the 'Studio 5000' install folder, the "
+            "'Logix Designer/ENU' folder, or one rs5000 folder (env S5K_HELP_ROOT)"
         ),
     )
     p.add_argument("--version", help="Default help version, e.g. v37 (env S5K_VERSION)")

@@ -51,6 +51,23 @@ INLINE_TAGS = {
     "label",
 }
 _WS = re.compile(r"\s+")
+# legacy (v31-v36) help classes; Oxygen pages never use these
+_LEGACY_DROP_TABLES = {"relatedtopics", "tableindexlinks", "tableindexatoz"}
+_LEGACY_LABELS = {
+    "NOTE",
+    "TIP",
+    "IMPORTANT",
+    "EXAMPLE",
+    "WARNING",
+    "ATTENTION",
+    "CAUTION",
+    "SAFETY ADVISORY",
+}
+_LEGACY_LABEL_ALIASES = {
+    "SAFETY ADVISORY GRAPHIC": "SAFETY ADVISORY",
+    "SM_SAFETY_ADVISORY": "SAFETY ADVISORY",
+}
+_LEGACY_CODE = {"codeindent1", "codeindent2", "codeindent3"}
 
 
 def _cls(node: LexborNode) -> str:
@@ -73,8 +90,9 @@ def resolve_ref(page_path: str, href: str) -> str | None:
 
 
 class _Converter:
-    def __init__(self, page_path: str):
+    def __init__(self, page_path: str, legacy: bool = False):
         self.page_path = page_path
+        self.legacy = legacy  # enables legacy (v31-v36) class handling
         self.links: list[str] = []
 
     # ---------- inline ----------
@@ -181,8 +199,13 @@ class _Converter:
             t = self._tidy(self.inline(n))
             if not t:
                 return []
-            if "subheading" in cls.split():
+            classes = cls.split()
+            if self.legacy and "keywords" in classes:  # legacy index keywords
+                return []
+            if "subheading" in classes or (self.legacy and "subheading2" in classes):
                 return [f"### {t.replace(chr(10), ' ')}"]
+            if self.legacy and any(c in _LEGACY_CODE for c in classes) and "`" not in t:
+                return ["\n".join(f"`{ln}`" if ln else "" for ln in t.split("\n"))]
             return [t]
         if tag == "h1":
             return []
@@ -193,6 +216,13 @@ class _Converter:
             b = self._list(n)
             return [b] if b else []
         if tag == "table":
+            classes = set(cls.split())
+            if self.legacy and classes & _LEGACY_DROP_TABLES:  # nav/index tables
+                return []
+            if self.legacy and "tableintopic" in classes:
+                note_rows = self._legacy_note_rows(n)
+                if note_rows:
+                    return self._legacy_note(note_rows)
             b = self._table(n)
             return [b] if b else []
         if tag == "pre":
@@ -221,6 +251,66 @@ class _Converter:
             return []
         text = "\n\n".join(inner)
         return ["\n".join(f"> {ln}" if ln else ">" for ln in text.split("\n"))]
+
+    @staticmethod
+    def _has_content(cell: LexborNode) -> bool:
+        return bool(cell.text(strip=True)) or cell.css_first("img") is not None
+
+    @staticmethod
+    def _note_label(raw: str) -> str:
+        """Normalise a candidate note label; "" when it is not an allowed label."""
+        t = _WS.sub(" ", raw).strip().rstrip(":").strip().upper()
+        t = _LEGACY_LABEL_ALIASES.get(t, t)
+        return t if t in _LEGACY_LABELS else ""
+
+    @staticmethod
+    def _legacy_note_rows(table: LexborNode) -> list[tuple[str, list[LexborNode]]]:
+        """(label, body cells) per note row, or [] when the table is not a note table.
+
+        Spacer rows (no text, no img) are skipped; every other row must be a note row.
+        A note row's first cell gives an allowed label via p.tableheadingright, a
+        p.tableheading cell whose whole text is the label, or an image-only cell whose
+        alt is the label; a later cell must have content. Icon legends stay tables.
+        """
+        out: list[tuple[str, list[LexborNode]]] = []
+        for tr, _ in _Converter._rows(table):
+            cells = [c for c in tr.iter() if c.tag in ("td", "th")]
+            if not any(_Converter._has_content(c) for c in cells):
+                continue
+            first = cells[0]
+            text = first.text(strip=True)
+            head = first.css_first("p.tableheadingright")
+            img = first.css_first("img")
+            label = ""
+            if head is not None:
+                label = _Converter._note_label(head.text(strip=True))
+            elif first.css_first("p.tableheading") is not None and text:
+                label = _Converter._note_label(text)
+            elif img is not None and not text:
+                label = _Converter._note_label(img.attributes.get("alt") or "")
+            body = [c for c in cells[1:] if _Converter._has_content(c)]
+            if not label or not body:
+                return []
+            out.append((label, body))
+        return out
+
+    def _legacy_note(self, rows: list[tuple[str, list[LexborNode]]]) -> list[str]:
+        result: list[str] = []
+        for label, body in rows:
+            inner: list[str] = []
+            for c in body:
+                inner.extend(self.blocks(c))
+            if label and inner:
+                inner[0] = f"**{label}** {inner[0]}"
+            elif label:
+                inner = [f"**{label}**"]
+            if not inner:
+                continue
+            text = "\n\n".join(inner)
+            result.append(
+                "\n".join(f"> {ln}" if ln else ">" for ln in text.split("\n"))
+            )
+        return result
 
     def _list(self, n: LexborNode) -> str:
         lines: list[str] = []
@@ -322,8 +412,10 @@ class _Converter:
         return "\n".join(out)
 
 
-def convert_article(article: LexborNode, page_path: str) -> tuple[str, list[str]]:
-    conv = _Converter(page_path)
+def convert_article(
+    article: LexborNode, page_path: str, legacy: bool = False
+) -> tuple[str, list[str]]:
+    conv = _Converter(page_path, legacy)
     blocks = conv.blocks(article)
     md = "\n\n".join(blocks)
     md = re.sub(r"\n{3,}", "\n\n", md).strip()
@@ -369,6 +461,32 @@ def parse_html(html: str, fallback_path: str):
         markdown=md,
         links=links,
     )
+
+
+def parse_legacy_html(html: str, path: str):
+    """Parse one legacy (v31-v36) page. Returns a RawPage."""
+    from .sources.base import RawPage
+
+    tree = LexborHTMLParser(html)
+    section = tree.css_first("#content_section")
+    t = tree.css_first("head > title") or tree.css_first("title")
+    title = _WS.sub(" ", t.text(strip=True)).strip() if t else ""
+    if not title and section is not None:
+        h1 = section.css_first("h1")
+        if h1 is not None:
+            title = _WS.sub(" ", h1.text(strip=True)).strip()
+    if section is not None:
+        md, links = convert_article(section, path, legacy=True)
+    else:
+        md, links = "", []
+    md = (f"# {title}\n\n{md}" if title else md).strip()
+    crumbs: list[tuple[str, str]] = []
+    for a in tree.css("p.breadcrumbs a.breadcrumblink"):
+        ref = resolve_ref(path, a.attributes.get("href") or "")
+        text = _WS.sub(" ", a.text(strip=True)).strip()
+        if ref and text:
+            crumbs.append((text, ref))
+    return RawPage(path=path, title=title, markdown=md, links=links, crumb_trail=crumbs)
 
 
 # ---------------- text helpers for FTS ----------------

@@ -311,6 +311,7 @@ def test_breadcrumb_inbound_and_section_fallbacks(synthetic_root, tmp_path):
         "toc": 1,
         "relation": 1,
         "csv": 1,
+        "page": 0,
         "inbound": 1,
         "section": 1,
     }

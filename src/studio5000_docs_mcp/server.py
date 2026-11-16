@@ -295,13 +295,14 @@ def list_versions() -> str:
     if m is None or not m.versions:
         return (
             "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the "
-            "'Logix Designer/ENU' folder or an 'rs5000' help folder."
+            "'Studio 5000' install folder, the 'Logix Designer/ENU' folder, "
+            "or an 'rs5000' help folder."
         )
     lines = []
     for v, info in m.versions.items():
         st = m.state(v)
         flag = " (default)" if v == m.default else ""
-        fmt = info.format + ("" if info.format == "oxygen" else " - not supported yet")
+        fmt = info.format
         pages = f", {st.stats.get('pages')} pages" if st.phase == "ready" else ""
         lines.append(
             f"- {v}{flag}: format={fmt}, index={st.phase}{pages}, root={info.root}"
@@ -383,7 +384,7 @@ for _fn in TOOLS:
 def _build_only(m: IndexManager) -> int:
     if not m.default:
         print(
-            "No Oxygen-format help folder found. Set S5K_HELP_ROOT or pass --root.",
+            "No help folder found. Set S5K_HELP_ROOT or pass --root.",
             file=sys.stderr,
         )
         return 2
