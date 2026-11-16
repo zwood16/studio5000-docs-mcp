@@ -1,10 +1,15 @@
 # studio5000-docs-mcp
 
-MCP server that lets Claude (Claude Code, VS Code Chat, etc.) search and read the Studio 5000 Logix Designer help: instructions, fault codes, module configuration, dialogs.
+MCP server that lets agents (Claude Code, VS Code Chat, etc.) search and read the Studio 5000 Logix Designer help: instructions, fault codes, module configuration, dialogs, etc.
 
-It indexes the help that ships with Logix Designer **v31–v37** (v31–v36 use a legacy flat `.htm` format with `toc.json`; v37 is Oxygen WebHelp) into a local SQLite FTS5 database, one per version (BM25 ranking, title/mnemonic/keyword boosting, clean Markdown per page with tables preserved).
+It indexes the help that ships with Logix Designer **v31–v37+** into a local SQLite FTS5 database, one per version (BM25 ranking, title/mnemonic/keyword boosting, clean Markdown per page with tables preserved).
 
 Each user builds the index locally from their own licensed install. No Rockwell content is stored in this repository.
+
+> [!NOTE]
+> Versions older than v31 are currently unsupported as they use a different format for the help docs
+>
+> Only versions up to v37 have been tested so far, but newer versions that use the current Oxygen WebHelp format should work just fine.
 
 ## Install / run
 
@@ -23,17 +28,18 @@ The first start builds the index in the background (a few seconds to about a min
 
 ## Configuration
 
-| Env var | CLI flag | Meaning |
-|---|---|---|
-| `S5K_HELP_ROOT` | `--root` | The `Studio 5000` install folder, the `Logix Designer/ENU` folder, or one `rs5000` help folder. Folders are scanned for `Logix Designer/ENU/v*/Bin/Help/ENU/rs5000` (v33+) and `Help/ENU/v*/rs5000` (v31, v32). |
-| `S5K_VERSION` | `--version` | Default version, e.g. `v37` (default: the newest version found; a requested version that is not found falls back to it with a warning). |
-| `S5K_DB_DIR` | | Where index databases are stored (default: user cache dir for `studio5000-docs-mcp`). |
-| | `--force-rebuild` | Rebuild even if the cache is fresh. |
-| | `--transport stdio\|streamable-http` | Default `stdio`. |
-| | `--build-only` | Build the index, print statistics and timing, exit. |
-| | `--all` | With `--build-only`: build every discovered version, one summary line each (exit 1 if any fails). |
+| Env var         | CLI flag                             | Meaning                                                                                                                                                                                                         |
+| --------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `S5K_HELP_ROOT` | `--root`                             | The `Studio 5000` install folder, the `Logix Designer/ENU` folder, or one `rs5000` help folder. Folders are scanned for `Logix Designer/ENU/v*/Bin/Help/ENU/rs5000` (v33+) and `Help/ENU/v*/rs5000` (v31, v32). |
+| `S5K_VERSION`   | `--version`                          | Default version, e.g. `v37` (default: the newest version found; a requested version that is not found falls back to it with a warning).                                                                         |
+| `S5K_DB_DIR`    |                                      | Where index databases are stored (default: user cache dir for `studio5000-docs-mcp`).                                                                                                                           |
+|                 | `--force-rebuild`                    | Rebuild even if the cache is fresh.                                                                                                                                                                             |
+|                 | `--transport stdio\|streamable-http` | Default `stdio`.                                                                                                                                                                                                |
+|                 | `--build-only`                       | Build the index, print statistics and timing, exit.                                                                                                                                                             |
+|                 | `--all`                              | With `--build-only`: build every discovered version, one summary line each (exit 1 if any fails).                                                                                                               |
 
-Windows: when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000` (both the `Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and `Help\ENU\v*\rs5000` trees) and the same folder under `%ProgramFiles%`. This matches a default Studio 5000 install (checked on Windows 11 with v30–v37 installed under `Program Files (x86)`). Set `S5K_HELP_ROOT` for non-default install locations.
+**On Windows**:  
+when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000` (both the `Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and `Help\ENU\v*\rs5000` trees) and the same folder under `%ProgramFiles%`. This matches a default Studio 5000 install (checked on Windows 11 with v30–v37 installed under `Program Files (x86)`). Set `S5K_HELP_ROOT` for non-default install locations.
 
 The index is one SQLite file per version. It is rebuilt when the help folder's HTML files, TOC files or metadata files (`context-help-map.xml`, `rs5000.csv`, `index.xml`) change, or when the schema version changes. The help folder is only ever read.
 
