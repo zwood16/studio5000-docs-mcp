@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -131,5 +132,11 @@ def default_version(
     requested = normalize_version(requested)
     if requested and requested in versions:
         return requested
-    ox = [v for v in versions.values() if v.format == "oxygen"]
-    return max(ox, key=lambda v: v.number).version if ox else None
+    if requested:
+        print(
+            f"studio5000-docs-mcp: requested version {requested!r} not found; "
+            "using the newest available version.",
+            file=sys.stderr,
+        )
+    ok = [v for v in versions.values() if v.format in ("oxygen", "legacy")]
+    return max(ok, key=lambda v: v.number).version if ok else None

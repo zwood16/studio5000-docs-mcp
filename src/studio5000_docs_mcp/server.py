@@ -17,8 +17,8 @@ from .config import Config, load_config, normalize_version
 from .index import Index, IndexManager, IndexNotReady
 
 INSTRUCTIONS = (
-    "Studio 5000 Logix Designer help (Rockwell, Oxygen WebHelp) as a searchable"
-    " index.\n"
+    "Studio 5000 Logix Designer help (Rockwell), one searchable index per"
+    " installed version (v31+).\n"
     "\n"
     "CRITICAL: search_help snippets are NOT documentation content. Never answer"
     " from snippets alone; always call get_page (or get_instruction) to read the"
@@ -39,6 +39,19 @@ INSTRUCTIONS = (
     " prefer get_instruction.\n"
     "5. get_page_by_help_id resolves numeric or named context-help IDs."
     " browse_toc and get_breadcrumb explore structure.\n"
+    "\n"
+    "VERSIONS\n"
+    "- Help content differs between Logix Designer versions (instructions,"
+    " attributes, supported controllers). The default is the newest installed"
+    " version; list_versions shows all of them.\n"
+    "- If the project's version is known (e.g. an L5X SoftwareRevision of 33.01),"
+    " pass version='33.01' (or 'v33') on every call. Otherwise use the default and"
+    " tell the user which version the answer comes from.\n"
+    "- Page ids from a non-default version carry a prefix (v33:14742.htm). Pass"
+    " them back unchanged. Don't mix pages from different versions in one answer"
+    " without saying so.\n"
+    "- The first call for a non-default version can take several seconds while"
+    " its index builds.\n"
     "\n"
     "TIPS\n"
     "- Identifiers work well: '.DN', 'TON', '1756-IF16', 'Axis_CIP_Drive', fault"
@@ -373,13 +386,25 @@ def list_versions() -> str:
             "or an 'rs5000' help folder."
         )
     lines = []
+    first_with: dict[tuple, str] = {}
     for v, info in m.versions.items():
         st = m.state(v)
         flag = " (default)" if v == m.default else ""
-        fmt = info.format
-        pages = f", {st.stats.get('pages')} pages" if st.phase == "ready" else ""
+        if st.phase == "pending":
+            index = "not loaded (opened from cache or built on first use)"
+        else:
+            pages = f", {st.stats.get('pages')} pages" if st.phase == "ready" else ""
+            index = f"{st.phase}{pages}"
+        same = ""
+        if info.format in ("oxygen", "legacy"):
+            sig = m.content_signature(v)
+            if sig is not None:
+                if sig in first_with:
+                    same = f", same help content as {first_with[sig]}"
+                else:
+                    first_with[sig] = v
         lines.append(
-            f"- {v}{flag}: format={fmt}, index={st.phase}{pages}, root={info.root}"
+            f"- {v}{flag}: format={info.format}, index={index}{same}, root={info.root}"
         )
     return "\n".join(lines)
 
@@ -477,12 +502,38 @@ def _build_only(m: IndexManager) -> int:
     return 0
 
 
+def _build_all(m: IndexManager) -> int:
+    """Build every discovered version; one summary line each. Exit 1 on any failure."""
+    if not m.versions:
+        print(
+            "No help folder found. Set S5K_HELP_ROOT or pass --root.",
+            file=sys.stderr,
+        )
+        return 2
+    failed = 0
+    for v, info in m.versions.items():
+        t0 = time.time()
+        try:
+            m.build(v)
+        except Exception as e:
+            failed += 1
+            print(f"{v}  {info.format}  ERROR: {type(e).__name__}: {e}")
+            continue
+        st = m.state(v)
+        print(
+            f"{v}  {info.format}  {st.stats.get('pages')}  "
+            f"{'yes' if st.rebuilt else 'no'}  {time.time() - t0:.2f}  "
+            f"{m.db_path(v)}"
+        )
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> None:
     cfg: Config = load_config(argv)
     m = IndexManager(cfg)
     set_manager(m)
     if cfg.build_only:
-        raise SystemExit(_build_only(m))
+        raise SystemExit(_build_all(m) if cfg.build_all else _build_only(m))
     if not m.versions:
         print(
             "studio5000-docs-mcp: no help folders found (set S5K_HELP_ROOT); "

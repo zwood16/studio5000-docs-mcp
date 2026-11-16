@@ -21,6 +21,7 @@ class Config:
     force_rebuild: bool = False
     transport: str = "stdio"
     build_only: bool = False
+    build_all: bool = False  # --all (with --build-only): build every version
 
     def resolved_db_dir(self) -> Path:
         return self.db_dir if self.db_dir else Path(user_cache_dir(APP_NAME))
@@ -69,11 +70,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Build the index, print statistics and timing, then exit",
     )
+    p.add_argument(
+        "--all",
+        action="store_true",
+        help="With --build-only: build every discovered version, one line each",
+    )
     return p
 
 
 def load_config(argv: list[str] | None = None) -> Config:
-    a = build_parser().parse_args(argv)
+    parser = build_parser()
+    a = parser.parse_args(argv)
+    if a.all and not a.build_only:
+        parser.error("--all requires --build-only")
     root = a.root or os.environ.get("S5K_HELP_ROOT")
     db_dir = os.environ.get("S5K_DB_DIR")
     return Config(
@@ -83,4 +92,5 @@ def load_config(argv: list[str] | None = None) -> Config:
         force_rebuild=a.force_rebuild,
         transport=a.transport,
         build_only=a.build_only,
+        build_all=a.all,
     )

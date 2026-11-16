@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import json
 import os
@@ -93,6 +94,21 @@ class LegacySource:
             except OSError:
                 parts.append("missing")
         return ":".join(parts)
+
+    def content_signature(self) -> tuple:
+        """Cheap identity of the help content, to spot identical versions."""
+        self._scan()
+        sizes = []
+        for name in ("toc.json", "rs5000.csv", "keywords.csv", "search.json"):
+            try:
+                sizes.append((self.root / name).stat().st_size)
+            except OSError:
+                sizes.append(-1)
+        try:
+            digest = hashlib.sha1((self.root / "toc.json").read_bytes()).hexdigest()
+        except OSError:
+            digest = ""
+        return ("legacy", len(self._files), tuple(sizes), digest)
 
     def page_count(self) -> int:
         self._scan()

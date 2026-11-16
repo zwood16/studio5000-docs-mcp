@@ -782,6 +782,23 @@ class IndexManager:
             v: threading.Event() for v in self.versions
         }
         self._thread: threading.Thread | None = None
+        self._signatures: dict[str, tuple | None] = {}
+
+    def _make_source(self, version: str, progress=None):
+        info = self.versions[version]
+        cls = OxygenSource if info.format == "oxygen" else LegacySource
+        return cls(info.root, version, progress=progress)
+
+    def content_signature(self, version: str) -> tuple | None:
+        """Lazily computed, cached content signature (None if unavailable)."""
+        if version not in self._signatures:
+            try:
+                self._signatures[version] = self._make_source(
+                    version
+                ).content_signature()
+            except Exception:
+                self._signatures[version] = None
+        return self._signatures[version]
 
     def db_path(self, version: str) -> Path:
         return self.cfg.resolved_db_dir() / f"{version}.sqlite"
@@ -835,8 +852,7 @@ class IndexManager:
             def progress(done: int, total: int):
                 st.phase, st.done, st.total = "parsing", done, total
 
-            source_cls = OxygenSource if info.format == "oxygen" else LegacySource
-            source = source_cls(info.root, version, progress=progress)
+            source = self._make_source(version, progress=progress)
             fp = db_fingerprint(source)
             dbp = self.db_path(version)
             fresh = False

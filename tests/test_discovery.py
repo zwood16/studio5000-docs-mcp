@@ -100,10 +100,23 @@ def test_format_labels(tmp_path: Path):
     assert not is_legacy_root(_help(tmp_path, 33))
 
 
-def test_default_version_picks_oxygen(tmp_path: Path):
+def test_default_version_picks_newest(tmp_path: Path):
     _layout(tmp_path)
     found = discover(Config(help_root=tmp_path))
     assert default_version(found, None) == "v37"
-    assert (
-        default_version({"v36": VersionInfo("v36", tmp_path, "legacy")}, None) is None
-    )
+    only_legacy = {"v36": VersionInfo("v36", tmp_path, "legacy")}
+    assert default_version(only_legacy, None) == "v36"
+
+
+def test_default_version_rules(tmp_path: Path, capsys):
+    vs = {
+        f"v{n}": VersionInfo(f"v{n}", tmp_path, fmt)
+        for n, fmt in ((31, "legacy"), (35, "legacy"), (36, "unknown"))
+    }
+    assert default_version(vs, None) == "v35"  # unknown never defaults
+    assert default_version(vs, "33.01") == "v35"  # not found: fallback + warning
+    err = capsys.readouterr().err
+    assert "v33" in err and "not found" in err
+    assert default_version(vs, "v31") == "v31"
+    assert capsys.readouterr().err == ""
+    assert default_version({"v36": vs["v36"]}, None) is None

@@ -64,7 +64,7 @@ def test_discovery_labels_legacy(legacy_root):
 
 def test_end_to_end_build(legacy_root, tmp_path):
     m = IndexManager(Config(help_root=legacy_root, db_dir=tmp_path / "db"))
-    assert m.default is None  # default stays highest oxygen version
+    assert m.default == "v98"  # legacy-only installs default to the newest
     m.build("v98")
     idx = m.get("v98")
     try:
