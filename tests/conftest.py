@@ -135,6 +135,7 @@ _LEGACY_FIXTURE = Path(__file__).parent / "fixtures" / "legacy_page.htm"
 def _legacy_html(title: str, body_word: str = "") -> str:
     html = _LEGACY_FIXTURE.read_text(encoding="utf-8")
     html = html.replace("Widget Pulse Timer (WPT)", title)
+    html = html.replace('href="1003.htm"', 'href="wpt.htm"')
     return html.replace(
         "The WPT instruction emits a pulse",
         f"{body_word} The instruction emits a pulse",

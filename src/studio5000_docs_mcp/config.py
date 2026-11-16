@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,11 +26,20 @@ class Config:
         return self.db_dir if self.db_dir else Path(user_cache_dir(APP_NAME))
 
 
+_VERSION_RE = re.compile(r"^v?(\d+)(?:\.\d+)*$")
+
+
 def normalize_version(v: str | None) -> str | None:
+    """'v37', '37', '37.00', 'v33.01' -> 'v37' / 'v33' (major only).
+
+    Anything else is returned stripped and lowercased so lookups fail as unknown."""
     if not v:
         return None
     v = v.strip().lower()
-    return v if v.startswith("v") else f"v{v}"
+    if not v:
+        return None
+    m = _VERSION_RE.match(v)
+    return f"v{int(m.group(1))}" if m else v
 
 
 def build_parser() -> argparse.ArgumentParser:
