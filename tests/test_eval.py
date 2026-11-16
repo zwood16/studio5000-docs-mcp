@@ -11,11 +11,13 @@ HERE = Path(__file__).parent
 SETS = {
     "eval": ("eval.yaml", 0.7),
     "holdout": ("eval_holdout.yaml", 0.5),
+    "v36": ("eval_v36.yaml", 0.7),  # runs against the legacy v36 index
 }
 
 
 @pytest.mark.parametrize("name", list(SETS))
-def test_hit_at_3(index, name):
+def test_hit_at_3(request, name):
+    index = request.getfixturevalue("legacy_index" if name == "v36" else "index")
     filename, threshold = SETS[name]
     items = yaml.safe_load((HERE / filename).read_text())
     hits = 0

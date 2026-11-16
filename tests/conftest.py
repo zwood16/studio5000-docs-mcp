@@ -35,6 +35,14 @@ def index(manager):
 
 
 @pytest.fixture(scope="session")
+def legacy_index(manager):
+    """The v36 (legacy format) index from the same S5K_HELP_ROOT."""
+    if "v36" not in manager.versions:
+        pytest.skip("v36 help not found under S5K_HELP_ROOT")
+    return manager.get("v36")
+
+
+@pytest.fixture(scope="session")
 def tools(manager):
     from studio5000_docs_mcp import server
 

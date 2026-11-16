@@ -1,0 +1,167 @@
+# Retrieval eval for the legacy v36 help (flat .htm paths). Ported from eval.yaml: each expected
+# v37 page was mapped to the v36 page(s) with the same title (same section preferred) via SQL on the
+# built index, then checked by reading the v36 page content. eval_holdout.yaml is not ported.
+# 'convert an integer to a string' is omitted: v36 has no 'DINT to String-DTOS' page.
+- query: what sets TON .DN
+  expected:
+  - 14742.htm
+- query: major fault type 4 code 34
+  expected:
+  - 288004.htm
+  - 5287.htm
+  - 14742.htm
+  - 14744.htm
+  - 14747.htm
+- query: 1756-IF16 single-ended wiring
+  expected:
+  - 1756_if16_and_if8_single_ended_current_wiring_diagram.htm
+  - 1756_if16_and_if8_single_ended_voltage_wiring_diagram.htm
+  - 1756_if16_wiring_diagram.htm
+- query: GSV WallClockTime attributes
+  expected:
+  - 14645.htm
+- query: MAOC output cam
+  expected:
+  - 15024.htm
+  - 19687.htm
+- query: AOI EnableInFalse
+  expected:
+  - 2576.htm
+- query: produce/consume RPI limits
+  expected:
+  - 93809.htm
+  - 93819.htm
+  - 4713.htm
+- query: message instruction MSG
+  expected:
+  - 14627.htm
+  - 78635.htm
+- query: PID proportional integral derivative instruction
+  expected:
+  - 14709.htm
+  - 78634.htm
+- query: how to jog an axis with MAJ
+  expected:
+  - 15004.htm
+  - 21411.htm
+- query: file arithmetic and logic FAL
+  expected:
+  - 14504.htm
+- query: bit field distribute BTD
+  expected:
+  - 14677.htm
+- query: SCL scale analog input to engineering units
+  expected:
+  - 14816.htm
+  - 19500.htm
+- query: retentive timer RTO
+  expected:
+  - 14747.htm
+- query: timer off delay TOF done bit
+  expected:
+  - 14744.htm
+- query: set an RPI range for produced tags
+  expected:
+  - 4713.htm
+- query: controller properties major faults tab
+  expected:
+  - 2330.htm
+  - 287759.htm
+- query: clear a major fault during prescan
+  expected:
+  - 79353.htm
+  - 79353_1.htm
+- query: wall clock time converted to UTC
+  expected:
+  - 4894.htm
+- query: sequencer output SQO
+  expected:
+  - 14704.htm
+- query: FOR loop instruction
+  expected:
+  - 14613.htm
+- query: SSV set system value
+  expected:
+  - 14626.htm
+  - 19322.htm
+  - 19323.htm
+  - 19324.htm
+  - 19325.htm
+  - 19326.htm
+- query: 1756-IF16 configuration tab floating point
+  expected:
+  - 227170.htm
+- query: one shot ONS
+  expected:
+  - 14575.htm
+- query: AXIS_CIP_DRIVE structure
+  expected:
+  - 75204.htm
+- query: bit shift left BSL
+  expected:
+  - 14533.htm
+- query: motion axis time cam MATC
+  expected:
+  - 15019.htm
+  - 21422.htm
+- query: string concatenate CONCAT
+  expected:
+  - 14568.htm
+  - 19543.htm
+- query: master driven axis control
+  expected:
+  - 15133.htm
+  - 21234.htm
+- query: modulo remainder
+  expected:
+  - 14620.htm
+  - 19593.htm
+  - 346254.htm
+- query: make a rung execute only once on a false-to-true transition
+  expected:
+  - 14575.htm
+  - 14574.htm
+- query: move a value from one tag to another
+  expected:
+  - 14688.htm
+- query: add two numbers together in ladder logic
+  expected:
+  - 14623.htm
+  - 19152.htm
+  - 343404.htm
+- query: check if a bit is on
+  expected:
+  - 14577.htm
+- query: latch an output so it stays on
+  expected:
+  - 14576.htm
+- query: jump to a label in ladder logic
+  expected:
+  - 14697.htm
+  - 78638.htm
+- query: create a produced tag to share data between controllers
+  expected:
+  - howto_publish_tag.htm
+- query: go online with the controller
+  expected:
+  - 4539.htm
+- query: download a project to the controller
+  expected:
+  - upload_download.htm
+  - 4545.htm
+- query: square root of a number
+  expected:
+  - 14617.htm
+  - 19517.htm
+  - 19518.htm
+  - 346235.htm
+- query: find where a tag is used in the project
+  expected:
+  - howto_find_all_logic_references_to_tag.htm
+- query: create an event task triggered by an input
+  expected:
+  - 346222.htm
+  - 345550.htm
+- query: difference between program-scoped and controller-scoped tags
+  expected:
+  - datascope.htm

@@ -228,7 +228,8 @@ def search_help(
     ]
     for i, r in enumerate(res, 1):
         mn = f" [{r['mnemonic']}]" if r["mnemonic"] else ""
-        lines.append(f"{i}. {r['title']}{mn}  ({r['kind']})")
+        dup = f"  (+{r['duplicates']} identical copies)" if r.get("duplicates") else ""
+        lines.append(f"{i}. {r['title']}{mn}  ({r['kind']}){dup}")
         lines.append(f"   page_id: {_qid(idx, r['id'])}")
         lines.append(f"   breadcrumb: {r['breadcrumb'] or '(top level)'}")
         snip = " ".join((r["snippet"] or "").split())

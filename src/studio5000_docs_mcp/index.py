@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -26,7 +27,7 @@ from .sources.base import HelpSource, RawPage
 from .sources.legacy import LegacySource
 from .sources.oxygen import OxygenSource
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 # column order: title, mnemonic, keywords, breadcrumb, body, extra
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
@@ -45,7 +46,7 @@ CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE pages(
   rid INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, version TEXT, path TEXT UNIQUE NOT NULL,
   title TEXT, mnemonic TEXT, kind TEXT, section TEXT, breadcrumb TEXT, crumbs TEXT,
-  description TEXT, markdown TEXT, chars INTEGER, links TEXT, parent_id TEXT, toc_node TEXT, depth INTEGER);
+  description TEXT, markdown TEXT, chars INTEGER, links TEXT, parent_id TEXT, toc_node TEXT, depth INTEGER, content_hash TEXT);
 CREATE TABLE mnemonics(mnemonic TEXT NOT NULL, page_id TEXT NOT NULL);
 CREATE INDEX mnemonics_m ON mnemonics(mnemonic);
 CREATE TABLE toc(node_id TEXT PRIMARY KEY, parent_id TEXT, page_id TEXT, title TEXT, ord INTEGER);
@@ -308,7 +309,7 @@ def build_index(
         body = markdown_to_text(md)
         title_f = clean_punct(p.title)
         conn.execute(
-            "INSERT INTO pages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO pages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 rid,
                 pid,
@@ -327,6 +328,7 @@ def build_index(
                 parent_id,
                 href_to_node.get(p.path),
                 len(crumbs),
+                hashlib.sha1(md.encode("utf-8")).hexdigest(),
             ),
         )
         for m in mns:
@@ -584,6 +586,7 @@ class Index:
             args += [s, f"help/{s}", f"{s}/%"]
         w = ",".join(str(x) for x in BM25_WEIGHTS)
         sql = f"""SELECT p.rid, p.id, p.path, p.title, p.mnemonic, p.kind, p.section, p.breadcrumb, p.description,
+                         p.content_hash,
                          bm25(pages_fts, {w}){bonus_sql} AS score,
                          snippet(pages_fts, {SNIPPET_COL}, '**', '**', ' ... ', 32) AS snip
                   FROM pages_fts JOIN pages p ON p.rid = pages_fts.rowid
@@ -616,29 +619,36 @@ class Index:
         ][:4]
         results: list[dict] = []
         seen: set[int] = set()
+        kept: dict[tuple[str, str], dict] = {}  # (title, content hash) -> kept result
 
         def add(row: sqlite3.Row, tier: int):
             if row["rid"] in seen:
                 return
             seen.add(row["rid"])
-            results.append(
-                {
-                    "id": row["id"],
-                    "path": row["path"],
-                    "title": row["title"],
-                    "mnemonic": row["mnemonic"],
-                    "kind": row["kind"],
-                    "section": row["section"],
-                    "breadcrumb": row["breadcrumb"],
-                    "snippet": (
-                        row["snip"]
-                        if "snip" in row.keys() and row["snip"]  # noqa: SIM118
-                        else row["description"]
-                    )
-                    or "",
-                    "tier": tier,
-                }
-            )
+            key = ((row["title"] or "").lower(), row["content_hash"] or "")
+            if key[1] and key in kept:  # identical copy of a better-ranked hit
+                kept[key]["duplicates"] += 1
+                return
+            res = {
+                "id": row["id"],
+                "path": row["path"],
+                "title": row["title"],
+                "mnemonic": row["mnemonic"],
+                "kind": row["kind"],
+                "section": row["section"],
+                "breadcrumb": row["breadcrumb"],
+                "snippet": (
+                    row["snip"]
+                    if "snip" in row.keys() and row["snip"]  # noqa: SIM118
+                    else row["description"]
+                )
+                or "",
+                "tier": tier,
+                "duplicates": 0,
+            }
+            results.append(res)
+            if key[1]:
+                kept[key] = res
 
         # tier 0: exact title / mnemonic matches
         tier0: list[sqlite3.Row] = []
@@ -680,7 +690,8 @@ class Index:
         t1 = self._ranked(" AND ".join(expanded), terms, kind, section, mn_toks)
         t1_ids = {r["rid"] for _, r in t1}
         cands = list(t1)
-        if len(t1) < limit and len(quoted) > 1:
+        t1_distinct = {(r["title"].lower(), r["content_hash"]) for _, r in t1}
+        if len(t1_distinct) < limit and len(quoted) > 1:
             cands += [
                 (sc, r)
                 for sc, r in self._ranked(

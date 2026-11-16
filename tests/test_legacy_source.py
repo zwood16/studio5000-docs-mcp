@@ -81,3 +81,28 @@ def test_end_to_end_build(legacy_root, tmp_path):
         assert idx.search("pulsing")[0]["path"] == "wpt.htm"  # keyword index
     finally:
         idx.close()
+
+
+def test_search_collapses_identical_copies(legacy_root, tmp_path):
+    # foo.htm and foo_1.htm are the same page under two names
+    m = IndexManager(Config(help_root=legacy_root, db_dir=tmp_path / "db"))
+    m.build("v98")
+    idx = m.get("v98")
+    try:
+        rows = idx.conn.execute(
+            "SELECT path, content_hash FROM pages WHERE title='Foo Page'"
+        ).fetchall()
+        assert len(rows) == 2 and rows[0][1] == rows[1][1] and rows[0][1]
+        res = idx.search("axolotl")
+        assert [r["path"] for r in res] == ["foo.htm"] or [r["path"] for r in res] == [
+            "foo_1.htm"
+        ]
+        assert res[0]["duplicates"] == 1
+        # the limit is still filled with distinct pages
+        res = idx.search("widget", limit=3)
+        keys = {(r["title"].lower()) for r in res}
+        assert len(keys) == len(res) == 3
+        # deliberate listings keep both copies
+        assert len(idx.by_help_id("555")) == 1
+    finally:
+        idx.close()
