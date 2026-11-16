@@ -13,18 +13,77 @@ Each user builds the index locally from their own licensed install. No Rockwell 
 
 ## Install / run
 
+[uv](https://docs.astral.sh/uv/getting-started/installation/) is strongly suggested. It downloads Python 3.14 automatically if you don't have it.
+
+### Option 1: release wheel (no clone)
+
+Each GitHub release has a wheel attached. uv can run it straight from the release URL:
+
 ```
+https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl
+```
+
+**Run with `uvx`.** uv downloads the wheel and its dependencies into its cache on first use and reuses them after that.
+
+```
+uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp --help
+```
+
+Register it with Claude Code. On Windows with a default install, you can leave out `-e S5K_HELP_ROOT=...`.
+
+```
+claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp
+```
+
+**Or install it as a tool.** This puts `studio5000-docs-mcp` on your PATH, and starts don't need the network:
+
+```
+uv tool install https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl
+claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- studio5000-docs-mcp
+```
+
+To upgrade, run `uv tool install --force <new wheel URL>`. To remove, run `uv tool uninstall studio5000-docs-mcp`.
+
+**Other MCP clients** (e.g. VS Code `.vscode/mcp.json`) need the same command and arguments:
+
+```json
+{
+  "servers": {
+    "s5k-help": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl",
+        "studio5000-docs-mcp"
+      ],
+      "env": { "S5K_HELP_ROOT": "/path/to/Studio 5000" }
+    }
+  }
+}
+```
+
+To build every version's index before first use, run the same command with `--build-only --all`, e.g. `studio5000-docs-mcp --build-only --all` after `uv tool install`.
+
+### Option 2: from source
+
+```
+git clone https://github.com/zwood16/studio5000-docs-mcp
+cd studio5000-docs-mcp
 uv run studio5000-docs-mcp
-uvx --from git+https://github.com/zwood16/studio5000-docs-mcp studio5000-docs-mcp
 ```
 
 Register with Claude Code:
 
 ```
-claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Logix Designer/ENU" -- uv --directory <path-to-this-repo> run studio5000-docs-mcp
+claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uv --directory <path-to-this-repo> run studio5000-docs-mcp
 ```
 
-The first start builds the index in the background (a few seconds to about a minute depending on disk or network speed); tools wait for it. Later starts reuse the cache unless the help files changed.
+To run the latest unreleased code without cloning, use `uvx --from git+https://github.com/zwood16/studio5000-docs-mcp studio5000-docs-mcp`.
+
+### First start
+
+The first start builds the default (newest) version's index in the background. That takes a few seconds to about a minute, depending on disk or network speed, and tools wait for it. Other versions build the first time a tool asks for them. Later starts reuse the cache unless the help files changed. The cache lives in your user cache directory, not in the install, so upgrading the wheel keeps it; a new schema version rebuilds it automatically.
 
 ## Configuration
 
