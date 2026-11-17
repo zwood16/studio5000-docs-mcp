@@ -11,6 +11,12 @@ Each user builds the index locally from their own licensed install. No Rockwell 
 >
 > Only versions up to v38 have been tested so far, but newer versions that use the current Oxygen WebHelp format should work just fine.
 
+**Related Projects**
+
+- [l5x-mcp](https://github.com/zwood16/l5x-mcp): an MCP server for reading and writing L5X files
+- [py_l5x](https://github.com/zwood16/py_l5x): a Python L5X parser
+- [ACD Auto Export](https://github.com/zwood16/acd-auto-export): a companion script that automatically exports your active Studio 5000 project (`.acd` file) to the more usable `.l5x` file format using the Studio 5000 SDK every time you save.
+
 ## Install
 
 [uv](https://docs.astral.sh/uv/getting-started/installation/) is strongly recommended. It downloads Python 3.14 automatically if you don't have it.
