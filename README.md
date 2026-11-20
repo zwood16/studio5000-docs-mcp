@@ -23,18 +23,18 @@ Each user builds the index locally from their own licensed install. No Rockwell 
 
 ### Option 1: release wheel (no clone)
 
-Each GitHub release has a Python wheel attached. Copy its URL from the [releases](https://github.com/zwood16/studio5000-docs-mcp/releases) page. The examples below use v1.0.
+Each GitHub release has a Python wheel attached. Copy its URL from the [releases](https://github.com/zwood16/studio5000-docs-mcp/releases) page. The examples below use v1.0.0.
 
 **Run it with `uvx`.** This is the simplest way. uv downloads the wheel and its dependencies into its cache on first use and reuses them after that:
 
 ```
-uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp --help
+uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp --help
 ```
 
 **Or install it as a tool.** This puts `studio5000-docs-mcp` on your PATH, and starts don't need the network:
 
 ```
-uv tool install https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl
+uv tool install https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl
 studio5000-docs-mcp --help
 ```
 
@@ -60,24 +60,24 @@ The server needs to know where Studio 5000 is installed. Set `S5K_HELP_ROOT` to 
 
 ### Claude Code
 
-Use the command that matches how you installed the tool.
+Use the command that matches how you installed the tool. `-s user` registers the server for all your projects; leave it out to add it to the current project only.
 
 With `uvx` and the release wheel:
 
 ```
-claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp
+claude mcp add -s user s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uvx --from https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl studio5000-docs-mcp
 ```
 
 With `uv tool install`:
 
 ```
-claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- studio5000-docs-mcp
+claude mcp add -s user s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- studio5000-docs-mcp
 ```
 
 From a clone of the repository:
 
 ```
-claude mcp add s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uv --directory <path-to-this-repo> run studio5000-docs-mcp
+claude mcp add -s user s5k-help -e S5K_HELP_ROOT="/path/to/Studio 5000" -- uv --directory <path-to-this-repo> run studio5000-docs-mcp
 ```
 
 ### Other MCP clients
@@ -92,7 +92,7 @@ Other clients (e.g. VS Code `.vscode/mcp.json`) need the same command, arguments
             "command": "uvx",
             "args": [
                 "--from",
-                "https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl",
+                "https://github.com/zwood16/studio5000-docs-mcp/releases/download/v1.0.0/studio5000_docs_mcp-1.0.0-py3-none-any.whl",
                 "studio5000-docs-mcp"
             ],
             "env": { "S5K_HELP_ROOT": "/path/to/Studio 5000" }
@@ -120,9 +120,11 @@ The first start builds the default (newest) version's index in the background. T
 |                 | `--all`                              | With `--build-only`: build every discovered version, one summary line each (exit 1 if any fails).                                                                                                               |
 
 **On Windows**:  
-when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000` (both the `Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and `Help\ENU\v*\rs5000` trees) and the same folder under `%ProgramFiles%`. This matches a default Studio 5000 install (checked on Windows 11 with v30–v38 installed under `Program Files (x86)`). Set `S5K_HELP_ROOT` for non-default install locations.
+when `S5K_HELP_ROOT` is unset, the server probes `%ProgramFiles(x86)%\Rockwell Software\Studio 5000` (both the `Logix Designer\ENU\v*\Bin\Help\ENU\rs5000` and `Help\ENU\v*\rs5000` trees) and the same folder under `%ProgramFiles%`. This matches a default Studio 5000 install (checked on Windows 11 with v30–v38 installed under `Program Files (x86)`). If a client starts the server without those environment variables (the Python MCP SDK's `stdio_client` passes only a fixed list of variables on Windows), the server falls back to `C:\Program Files (x86)` and `C:\Program Files`. Set `S5K_HELP_ROOT` for non-default install locations, or to be safe with any client.
 
 The index is one SQLite file per version. It is rebuilt when the help folder's HTML files, TOC files or metadata files (`context-help-map.xml`, `rs5000.csv`, `index.xml`) change, or when the schema version changes. The help folder is only ever read.
+
+**Unreachable help folder** (e.g. a network share that is offline): versions that already have a cached index are still served from the cache; only building or updating an index needs the help folder (and so does `get_image`). If no help folder is found, the server looks again on later tool calls (at most every 30 s), so it picks the folder up once it is reachable, without a restart.
 
 ## Multiple versions
 
@@ -134,9 +136,10 @@ The index is one SQLite file per version. It is rebuilt when the help folder's H
 
 ## Tools
 
-`search_help`, `get_page` (paginated with `offset`/`max_chars`), `get_instruction` (by mnemonic, e.g. `TON`, `SSV`), `get_page_by_help_id`, `browse_toc`, `get_breadcrumb`, `list_versions`, `get_help_statistics`. Search snippets are not page content; the server instructions tell the model to call `get_page`.
+`search_help`, `get_page` (paginated with `offset`/`max_chars`), `get_instruction` (by mnemonic, e.g. `TON`, `SSV`; also paginated), `get_image` (a graphic from a page, by the help-relative path in the page Markdown), `get_page_by_help_id`, `browse_toc`, `get_breadcrumb`, `list_versions`, `get_help_statistics`. Search snippets are not page content; the server instructions tell the model to call `get_page`.
 
 - **Page IDs:** a page's `page_id` is its help topic ID (e.g. `ait_455128`) when that ID is unique. Some pages share a topic ID (duplicated pages such as the GSV/SSV pages); those use their help-relative path instead (e.g. `help/clinset/...html`). Every tool that takes a `page_id` accepts either form.
+- **Renamed instructions:** v36 renamed several mnemonics (MOV→MOVE, EQU→EQ, NEQ→NE, LES→LT, GRT→GT, LEQ→LE, GEQ→GE, LIM→LIMIT, SQR→SQRT, XPY→EXPT, TOD→TO_BCD, FRD→BCD_TO, TRN→TRUNC, ACS→ACOS, ASN→ASIN, ATN→ATAN). `get_instruction` accepts either name in any version and says when it mapped one.
 - **Errors:** failures (unknown page, TOC node or version, invalid `kind`, index still building) are returned as MCP tool errors (`is_error: true`). Valid empty outcomes, such as no search hits or an unmapped help ID, are normal results.
 
 ## Development

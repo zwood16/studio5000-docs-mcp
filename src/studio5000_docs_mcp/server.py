@@ -8,13 +8,14 @@ import json
 import re
 import sys
 import time
+from pathlib import Path
 from typing import Literal
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .config import Config, load_config, normalize_version
-from .index import Index, IndexManager, IndexNotReady
+from .index import MNEMONIC_RENAMES_V36, Index, IndexManager, IndexNotReady
 
 INSTRUCTIONS = (
     "Studio 5000 Logix Designer help (Rockwell), one searchable index per"
@@ -36,9 +37,13 @@ INSTRUCTIONS = (
     " need 2-5 page reads). Follow [text](page:<page_id>) links in page Markdown"
     " with get_page.\n"
     "4. When the user names an instruction mnemonic (TON, MAOC, GSV, SSV, ...),"
-    " prefer get_instruction.\n"
+    " prefer get_instruction. It also resolves the names Logix Designer v36"
+    " renamed (e.g. MOV/MOVE, LEQ/LE, SQR/SQRT) in either direction.\n"
     "5. get_page_by_help_id resolves numeric or named context-help IDs."
     " browse_toc and get_breadcrumb explore structure.\n"
+    "6. Image paths in page Markdown (![alt](path)) are help-root-relative. Use"
+    " get_image to view a graphic; ladder/FBD diagrams often show operand labels"
+    " and pin names.\n"
     "\n"
     "VERSIONS\n"
     "- Help content differs between Logix Designer versions (instructions,"
@@ -263,16 +268,36 @@ def get_page(
 
 
 @_guard
-def get_instruction(mnemonic: str, version: str | None = None) -> str:
+def get_instruction(
+    mnemonic: str, version: str | None = None, offset: int = 0, max_chars: int = 20000
+) -> str:
     """Look up an instruction page directly by mnemonic, e.g. TON, MAOC, GSV, SSV.
 
-    Prefers the instruction-set (clinset) section.
+    Prefers the instruction-set (clinset) section. Names that Logix Designer v36
+    renamed (e.g. MOV/MOVE, LEQ/LE) are resolved in either direction.
+    Long pages are paginated: pass the offset from the 'next offset' hint to
+    continue. max_chars is clamped to 500-100000.
     version: e.g. 'v33' or a project revision like '33.01'; omit for the default
     (newest). IDs returned from a non-default version carry a 'v33:' prefix and
     can be passed back as-is.
     """
     idx = _index(version)
     rows = idx.instruction(mnemonic)
+    note = ""
+    if not rows:
+        key = mnemonic.strip().upper()
+        inverse = {new: old for old, new in MNEMONIC_RENAMES_V36.items()}
+        if key in MNEMONIC_RENAMES_V36:
+            alias = MNEMONIC_RENAMES_V36[key]
+            how = f"{key} was renamed {alias} in Logix Designer v36"
+        elif key in inverse:
+            alias = inverse[key]
+            how = f"{key} was named {alias} before Logix Designer v36"
+        else:
+            alias = ""
+        rows = idx.instruction(alias) if alias else []
+        if rows:
+            note = f"Note: {how}; showing {alias} from {idx.version}.\n\n"
     if not rows:
         res = idx.search(mnemonic, kind="instruction", limit=5)
         if not res:
@@ -287,13 +312,82 @@ def get_instruction(mnemonic: str, version: str | None = None) -> str:
         ]
         return "\n".join(lines)
     best = rows[0]
-    out = _page_text(idx, best, 0, 20000)
-    if len(rows) > 1:
+    out = note + _page_text(idx, best, offset, max_chars)
+    if len(rows) > 1 and int(offset) <= 0:
         out += "\n\n---\nOther pages with this mnemonic:\n" + "\n".join(
             f"- {r['title']}  (page_id: {_qid(idx, r['id'])})  {r['breadcrumb']}"
             for r in rows[1:11]
         )
     return out
+
+
+_IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"}
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+@_guard
+def get_image(path: str, version: str | None = None) -> Image | str:
+    """Get a graphic from the help folder, e.g. a ladder or FBD diagram.
+
+    path is the help-root-relative path exactly as it appears in page Markdown
+    ![alt](path), optionally version-qualified ('v33:graphics/x.png').
+    Allowed: png, jpg, gif, bmp, svg (svg is returned as text); max 5 MB.
+    Images are read from the help folder, which must be reachable.
+    version: e.g. 'v33' or a project revision like '33.01'; omit for the default
+    (newest).
+    """
+    version, ref = _split_ref(path, version)
+    idx = _index(version)
+    ref = (ref or "").strip().replace("\\", "/")
+    if not ref or ref.startswith("/") or re.match(r"^[A-Za-z]:", ref):
+        raise ToolError(f"Image path {path!r} must be relative to the help root.")
+    if Path(ref).suffix.lower() not in _IMAGE_TYPES:
+        raise ToolError(
+            f"Unsupported image type {Path(ref).suffix!r}; allowed: "
+            + ", ".join(sorted(_IMAGE_TYPES))
+        )
+    assert _manager is not None
+    root = _manager.versions[idx.version].root
+    try:
+        root = Path(root).resolve()
+        reachable = root.is_dir()
+    except OSError:
+        reachable = False
+    if not reachable:
+        raise ToolError("Images are read from the help folder, which is not reachable.")
+    try:
+        target = (root / ref).resolve()
+        if not target.is_relative_to(root):
+            raise ToolError(f"Image path {path!r} is outside the help folder.")
+        if not target.is_file():
+            # case-insensitive match within the same directory
+            low = target.name.lower()
+            hits = (
+                [c for c in target.parent.iterdir() if c.name.lower() == low]
+                if target.parent.is_dir()
+                else []
+            )
+            hits = [c for c in hits if c.is_file()]
+            if not hits:
+                raise ToolError(f"No image {path!r} in {idx.version}.")
+            target = hits[0].resolve()
+            if not target.is_relative_to(root):
+                raise ToolError(f"Image path {path!r} is outside the help folder.")
+        size = target.stat().st_size
+        if size > _IMAGE_MAX_BYTES:
+            raise ToolError(
+                f"Image {path!r} is {size} bytes; the limit is {_IMAGE_MAX_BYTES}."
+            )
+        if target.suffix.lower() == ".svg":
+            return target.read_text(encoding="utf-8", errors="replace")
+        return Image(data=target.read_bytes(), format=_image_format(target))
+    except OSError as e:
+        raise ToolError(f"Could not read image {path!r}: {e.strerror or e}") from e
+
+
+def _image_format(p: Path) -> str:
+    ext = p.suffix.lower().lstrip(".")
+    return "jpeg" if ext == "jpg" else ext
 
 
 @_guard
@@ -380,6 +474,8 @@ def get_breadcrumb(page_id: str, version: str | None = None) -> str:
 def list_versions() -> str:
     """List discovered help versions, their format, and index state."""
     m = _manager
+    if m is not None:
+        m.refresh()
     if m is None or not m.versions:
         return (
             "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the "
@@ -404,8 +500,10 @@ def list_versions() -> str:
                     same = f", same help content as {first_with[sig]}"
                 else:
                     first_with[sig] = v
+        cached = ", cached (help folder unreachable)" if info.cached else ""
         lines.append(
-            f"- {v}{flag}: format={info.format}, index={index}{same}, root={info.root}"
+            f"- {v}{flag}: format={info.format}, index={index}{same}{cached}, "
+            f"root={info.root}"
         )
     return "\n".join(lines)
 
@@ -419,6 +517,8 @@ def get_help_statistics(version: str | None = None) -> str:
     can be passed back as-is.
     """
     m = _manager
+    if m is not None:
+        m.refresh()
     if m is None or not m.versions:
         return list_versions()
     v = normalize_version(version) if version else m.default
@@ -459,6 +559,7 @@ TOOLS = [
     search_help,
     get_page,
     get_instruction,
+    get_image,
     get_page_by_help_id,
     browse_toc,
     get_breadcrumb,

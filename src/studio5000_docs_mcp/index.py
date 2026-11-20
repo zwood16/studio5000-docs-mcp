@@ -14,7 +14,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import Config, normalize_version
-from .discovery import VersionInfo, default_version, discover
+from .discovery import (
+    MIN_VERSION,
+    VersionInfo,
+    _windows_probe_bases,
+    default_version,
+    discover,
+)
 from .extract import (
     clean_punct,
     expand_identifiers,
@@ -27,7 +33,7 @@ from .sources.base import HelpSource, RawPage
 from .sources.legacy import LegacySource
 from .sources.oxygen import OxygenSource
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_.-'"
 # column order: title, mnemonic, keywords, breadcrumb, body, extra
 BM25_WEIGHTS = (10.0, 8.0, 6.0, 2.0, 2.0, 1.0)
@@ -56,7 +62,30 @@ CREATE VIRTUAL TABLE pages_fts USING fts5(title, mnemonic, keywords, breadcrumb,
   tokenize="{TOKENIZER}");
 """  # noqa: E501  (SQL text kept byte-identical)
 
-_MN_RE = re.compile(r"\(([A-Z0-9_ ]+)\)")
+_MN_RE = re.compile(r"\(([A-Z0-9_ /,]+)\)")
+
+# Logix Designer v36 renamed these instructions (old -> new). Taken from the "In Logix
+# Designer version 36, the mnemonic for this instruction changed from X to Y" tips.
+# Static rather than parsed because the v38 LE page wrongly says "LES to LE" (the old
+# name was LEQ).
+MNEMONIC_RENAMES_V36 = {
+    "MOV": "MOVE",
+    "EQU": "EQ",
+    "NEQ": "NE",
+    "LES": "LT",
+    "GRT": "GT",
+    "LEQ": "LE",
+    "GEQ": "GE",
+    "LIM": "LIMIT",
+    "SQR": "SQRT",
+    "XPY": "EXPT",
+    "TOD": "TO_BCD",
+    "FRD": "BCD_TO",
+    "TRN": "TRUNC",
+    "ACS": "ACOS",
+    "ASN": "ASIN",
+    "ATN": "ATAN",
+}
 
 
 _MN_DASH_RE = re.compile(r"[-\u2013]\s?([A-Z][A-Z0-9_]+)$")
@@ -72,10 +101,11 @@ def extract_mnemonics(
     if section is None:
         section = section_of(path)
     out = []
-    for m in _MN_RE.findall(title):
-        m = m.strip()
-        if len(m) >= 2 and re.search(r"[A-Z]", m) and m not in out:
-            out.append(m)
+    for group in _MN_RE.findall(title):
+        for m in re.split(r"[/,]", group):  # e.g. '(SQR/SQRT)', '(ASN, ASIN)'
+            m = m.strip()
+            if len(m) >= 2 and re.search(r"[A-Z]", m) and m not in out:
+                out.append(m)
     if not out and section == "help/clinset":
         m = _MN_DASH_RE.search(title.strip())
         if m:
@@ -777,12 +807,45 @@ class IndexNotReady(Exception):
     pass
 
 
+def _reachable(root: Path) -> bool:
+    try:
+        return root.is_dir()
+    except OSError:
+        return False
+
+
+def _fingerprint_suffix(root: Path | str) -> str:
+    return f":schema{SCHEMA_VERSION}:{root}:{TOKENIZER}"
+
+
+def _search_bases(cfg: Config) -> list[Path]:
+    """Folders a cached index's stored root must live under (decided by name only,
+    never touching the filesystem, because the help share may be unreachable)."""
+    if cfg.help_root:
+        r = cfg.help_root
+        bases = [r]
+        if r.name.lower() == "enu" and r.parent.name.lower() == "logix designer":
+            bases.append(r.parent.parent)
+        elif r.name.lower() == "logix designer":
+            bases.append(r.parent)
+        return bases
+    if os.name == "nt":
+        return _windows_probe_bases()
+    return []
+
+
+def _is_under(p: Path, base: Path) -> bool:
+    np_, nb = Path(os.path.normcase(str(p))), Path(os.path.normcase(str(base)))
+    return np_ == nb or nb in np_.parents
+
+
 class IndexManager:
     RETRY_AFTER = 30.0  # seconds after a failed build before get() tries again
+    REDISCOVER_AFTER = 30.0  # min seconds between help-folder rediscovery attempts
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.versions: dict[str, VersionInfo] = discover(cfg)
+        self.versions: dict[str, VersionInfo] = self._discover_all()
         self.default = default_version(self.versions, cfg.version)
         self._indexes: dict[str, Index] = {}
         self._states: dict[str, BuildState] = {v: BuildState() for v in self.versions}
@@ -794,6 +857,80 @@ class IndexManager:
         }
         self._thread: threading.Thread | None = None
         self._signatures: dict[str, tuple | None] = {}
+        self._refresh_lock = threading.Lock()
+        self._last_discovery = time.monotonic()
+
+    def _discover_cached(self, live: dict[str, VersionInfo]) -> dict[str, VersionInfo]:
+        """Versions with a usable cached index whose help folder was not discovered."""
+        found: dict[str, VersionInfo] = {}
+        bases = _search_bases(self.cfg)
+        if not bases:
+            return found
+        try:
+            files = sorted(self.cfg.resolved_db_dir().glob("v*.sqlite"))
+        except OSError:
+            return found
+        for f in files:
+            try:
+                conn = sqlite3.connect(f"file:{f}?mode=ro", uri=True)
+                try:
+                    meta = dict(
+                        conn.execute(
+                            "SELECT key, value FROM meta "
+                            "WHERE key IN ('fingerprint','root','version')"
+                        ).fetchall()
+                    )
+                finally:
+                    conn.close()
+                fp, root = meta.get("fingerprint"), meta.get("root")
+                ver = normalize_version(meta.get("version"))
+                if not (fp and root and ver) or ver in live or ver in found:
+                    continue
+                if not fp.endswith(_fingerprint_suffix(root)):
+                    continue
+                if not any(_is_under(Path(root), b) for b in bases):
+                    continue
+                fmt = fp.split(":", 1)[0]
+                if fmt not in ("oxygen", "legacy"):
+                    continue
+                info = VersionInfo(ver, Path(root), fmt, cached=True)
+                if info.number >= MIN_VERSION:
+                    found[ver] = info
+            except Exception:  # unreadable or corrupt DB
+                continue
+        return found
+
+    def _discover_all(self) -> dict[str, VersionInfo]:
+        live = discover(self.cfg)
+        merged = {**live, **self._discover_cached(live)}
+        return dict(sorted(merged.items(), key=lambda kv: kv[1].number))
+
+    def refresh(self) -> None:
+        """Re-run discovery when nothing was found or a version is cached-only."""
+        with self._refresh_lock:
+            if self.versions and not any(i.cached for i in self.versions.values()):
+                return
+            now = time.monotonic()
+            if now - self._last_discovery < self.REDISCOVER_AFTER:
+                return
+            self._last_discovery = now
+            found = self._discover_all()
+            for v, info in found.items():
+                cur = self.versions.get(v)
+                if cur is None:
+                    self._states[v] = BuildState()
+                    self._locks[v] = threading.Lock()
+                    self._ready[v] = threading.Event()
+                    self.versions[v] = info
+                elif cur.cached and not info.cached:
+                    self.versions[v] = info
+                    self._signatures.pop(v, None)
+            self.versions = dict(
+                sorted(self.versions.items(), key=lambda kv: kv[1].number)
+            )
+            if self.default is None:
+                self.default = default_version(self.versions, self.cfg.version)
+                self.start_background()
 
     def _make_source(self, version: str, progress=None):
         info = self.versions[version]
@@ -802,6 +939,9 @@ class IndexManager:
 
     def content_signature(self, version: str) -> tuple | None:
         """Lazily computed, cached content signature (None if unavailable)."""
+        info = self.versions[version]
+        if info.cached or not _reachable(info.root):
+            return None
         if version not in self._signatures:
             try:
                 self._signatures[version] = self._make_source(
@@ -842,6 +982,34 @@ class IndexManager:
         )
         self._ready[version].set()
 
+    def _open_unreachable(self, version: str, info: VersionInfo, st: BuildState):
+        """Help folder unreachable: serve the cached index as-is, never rebuild."""
+        if version in self._indexes:
+            return self._indexes[version]
+        dbp = self.db_path(version)
+        idx = None
+        try:
+            if dbp.exists():
+                idx = Index(dbp)
+                fp = idx._meta("fingerprint") or ""
+                if not fp.endswith(_fingerprint_suffix(info.root)):
+                    idx.close()
+                    idx = None
+        except sqlite3.DatabaseError:
+            idx = None
+        if idx is None:
+            raise RuntimeError(
+                f"{version}: help folder {info.root} is unreachable and no usable "
+                "cached index exists"
+            )
+        st.rebuilt = False
+        st.stats = json.loads(idx._meta("stats") or "{}")
+        self._indexes[version] = idx
+        st.phase, st.finished = "ready", time.time()
+        st.done = st.total = st.stats.get("pages", 0)
+        self._ready[version].set()
+        return idx
+
     def build(self, version: str, force: bool | None = None) -> Index:
         """Open the cached index, rebuilding when stale. Thread-safe and idempotent."""
         force = self.cfg.force_rebuild if force is None else force
@@ -850,6 +1018,8 @@ class IndexManager:
                 return self._indexes[version]
             info = self.versions[version]
             st = self._states[version]
+            if not _reachable(info.root):
+                return self._open_unreachable(version, info, st)
             st.phase, st.started, st.error, st.done, st.total = (
                 "scanning",
                 time.time(),
@@ -899,6 +1069,7 @@ class IndexManager:
             return idx
 
     def get(self, version: str | None = None, wait: float = 45.0) -> Index:
+        self.refresh()
         if not self.versions:
             raise ValueError(
                 "No Studio 5000 help folders found. Set S5K_HELP_ROOT to the "

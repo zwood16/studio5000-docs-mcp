@@ -23,6 +23,7 @@ class VersionInfo:
     version: str  # "v37"
     root: Path  # the rs5000 folder
     format: str  # "oxygen" | "legacy" | "unknown"
+    cached: bool = False  # help folder unreachable; served from the cached index
 
     @property
     def number(self) -> int:
@@ -49,10 +50,17 @@ def _windows_probe_bases() -> list[Path]:
     # Default Studio 5000 install location (confirmed on Windows 11, v30-v37 under
     # Program Files (x86)). Both help trees live under this folder.
     # Set S5K_HELP_ROOT for non-default installs.
-    bases = []
-    for env in ("ProgramFiles(x86)", "ProgramFiles"):
-        base = os.environ.get(env)
-        if base:
+    # Some MCP clients strip environment variables, so fall back to the defaults.
+    bases: list[Path] = []
+    seen: set[str] = set()
+    for env, default in (
+        ("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        ("ProgramFiles", r"C:\Program Files"),
+    ):
+        base = os.environ.get(env) or default
+        key = base.lower()
+        if key not in seen:
+            seen.add(key)
             bases.append(Path(base) / "Rockwell Software" / "Studio 5000")
     return bases
 

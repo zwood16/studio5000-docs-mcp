@@ -44,6 +44,10 @@ async def main() -> int:
             print(f"\n=== {name}({args}) isError={res.is_error}\n{text[:600]}")
             if res.is_error:
                 return 1
+        res = await s.call_tool("get_image", {"path": "x.txt"})
+        print(f"\n=== get_image(x.txt) isError={res.is_error}")
+        if not res.is_error:
+            return 1
         # deliberate bad call: failures must be reported as is_error=True
         res = await s.call_tool("get_page", {"page_id": "does-not-exist"})
         print(

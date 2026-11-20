@@ -75,3 +75,13 @@ def test_section_of():
     assert section_of("publications/guide/x.html") == "publications/guide"
     assert section_of("help/x.html") == "help"
     assert section_of("common-content/a/b.html") == "common-content"
+
+
+def test_extract_mnemonics_split_on_slash_and_comma():
+    assert extract_mnemonics("Square Root (SQR/SQRT)") == ["SQR", "SQRT"]
+    assert extract_mnemonics("Arc Sine (ASN, ASIN)") == ["ASN", "ASIN"]
+    assert extract_mnemonics("Arc Tangent (ATN, ATAN)") == ["ATN", "ATAN"]
+    assert extract_mnemonics("Arc Cosine (ACS, ACOS)") == ["ACS", "ACOS"]
+    assert extract_mnemonics("Odd (A/B)") == []  # parts too short
+    assert extract_mnemonics("Mixed (ABC/Opt)") == []  # not all caps: no match
+    assert extract_mnemonics("Same (ABC/ABC, ABC)") == ["ABC"]
